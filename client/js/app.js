@@ -801,34 +801,34 @@ const App = {
     }
   },
 
-  async handleGoogleSignIn() {
-    // If Google GSI client is available
-    if (window.google && window.google.accounts && window.google.accounts.id) {
-      try {
-        const clientId = '5sim-portal.apps.googleusercontent.com';
-        google.accounts.id.initialize({
-          client_id: clientId,
-          callback: async (response) => {
-            if (response.credential) {
-              await this.processGoogleAuth(response.credential);
-            }
-          }
-        });
-      } catch (e) {
-        console.warn('GSI Init:', e);
-      }
-    }
+  handleGoogleSignIn() {
+    this.openModal('googleSignInModal');
+    this.closeModal('authModal');
+  },
 
-    // Direct Google Sign In Prompt
-    const email = prompt('Enter your Google Account email to Sign In:', 'user@gmail.com');
-    if (!email) return;
-
-    if (!email.includes('@')) {
+  async submitGoogleSignIn(e) {
+    e.preventDefault();
+    const email = document.getElementById('googleEmailInput').value;
+    
+    if (!email || !email.includes('@')) {
       showToast('Please enter a valid Google email address', 'error');
       return;
     }
 
-    await this.processGoogleAuth({ email, name: email.split('@')[0] });
+    const btn = document.getElementById('btnSubmitGoogle');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '⏳ Loading...';
+    btn.disabled = true;
+
+    try {
+      await this.processGoogleAuth({ email, name: email.split('@')[0] });
+      this.closeModal('googleSignInModal');
+    } catch (error) {
+      console.error(error);
+    } finally {
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+    }
   },
 
   async processGoogleAuth(payload) {

@@ -878,11 +878,11 @@ const App = {
       // Switch to Step 2
       document.getElementById('forgotRequestForm').style.display = 'none';
       document.getElementById('forgotResetForm').style.display = 'flex';
-
-      // Auto-fill code if present
-      if (res.code) {
-        const codeInput = document.getElementById('resetOtpCode');
-        if (codeInput) codeInput.value = res.code;
+      
+      const codeInput = document.getElementById('resetOtpCode');
+      if (codeInput) {
+        codeInput.value = ''; // clear any old code
+        codeInput.focus();
       }
     } catch (err) {
       showToast(err.message || 'Failed to request reset code', 'error');

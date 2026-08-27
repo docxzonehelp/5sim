@@ -152,10 +152,40 @@ class AuthController {
 
       console.log(`🔑 [PASSWORD RESET] Email: ${cleanEmail} | OTP Code: ${code}`);
 
+      // Send the email using Nodemailer
+      if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+        const nodemailer = require('nodemailer');
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST,
+          port: process.env.SMTP_PORT || 465,
+          secure: process.env.SMTP_PORT == 465, // true for 465, false for other ports
+          auth: {
+            user: process.env.SMTP_USER,
+            pass: process.env.SMTP_PASS
+          }
+        });
+
+        await transporter.sendMail({
+          from: `"5SIM Reseller" <${process.env.SMTP_USER}>`,
+          to: cleanEmail,
+          subject: "Password Reset Verification Code",
+          html: `<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+                  <h2 style="color: #1e293b; text-align: center;">Password Reset Request</h2>
+                  <p style="color: #475569; font-size: 16px;">We received a request to reset your password. Here is your 6-digit verification code:</p>
+                  <div style="background-color: #f1f5f9; padding: 15px; text-align: center; border-radius: 8px; margin: 20px 0;">
+                    <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #3b82f6;">${code}</span>
+                  </div>
+                  <p style="color: #475569; font-size: 14px;">This code will expire in 15 minutes. If you did not request a password reset, please ignore this email.</p>
+                </div>`
+        });
+      } else {
+        console.warn('⚠️ SMTP settings not configured. Email was not sent.');
+      }
+
       res.json({
-        message: 'Password reset code generated successfully! Enter the code below to set your new password.',
-        email: cleanEmail,
-        code: code // For easy self-service & demonstration
+        message: 'Password reset code sent to your email address successfully!',
+        email: cleanEmail
+        // REMOVED: code (for security, it must be fetched from email)
       });
     } catch (error) {
       console.error('Forgot password error:', error);

@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>5SIM Verification & Virtual Numbers Portal</title>
+  
+  <!-- Modern Typography from Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700;800&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+</head>
+<body>
+
+  <!-- ==================== TOP NAVIGATION ==================== -->
+  <header class="navbar">
+    <div class="nav-container">
+      <!-- Brand Logo -->
+      <a href="/" class="brand-logo">
+        <div class="brand-icon">5S</div>
+        <div class="brand-text">
+          <span class="brand-title">5SIM VERIFY</span>
+          <span class="brand-subtitle">SMS & OTP Platform</span>
+        </div>
+      </a>
+
+      <!-- Center Status Pill -->
+      <div class="nav-center">
+        <div class="status-pill">
+          <div class="status-dot"></div>
+          <span>Fast SMS Dispatch Online</span>
+        </div>
+      </div>
+
+      <!-- Right User / Wallet Area -->
+      <div class="nav-actions">
+        <!-- Wallet (Visible when logged in) -->
+        <div class="wallet-box" id="walletBox">
+          <div class="wallet-info">
+            <span class="wallet-label">Balance</span>
+            <span class="wallet-amount" id="walletBalanceDisplay">$0.00</span>
+          </div>
+          <button class="btn-topup" onclick="App.openModal('depositModal')">
+            <span>+</span> Topup
+          </button>
+        </div>
+
+        <!-- Auth Actions (When logged out) -->
+        <div id="authActions" style="display: flex; gap: 0.5rem;">
+          <button class="btn-copy-sm" style="padding: 0.5rem 0.85rem; font-size: 0.85rem; background: var(--bg-card);" onclick="App.openModal('authModal'); App.switchAuthTab('login');">
+            Login
+          </button>
+          <button class="btn-topup" style="padding: 0.5rem 0.85rem; font-size: 0.85rem;" onclick="App.openModal('authModal'); App.switchAuthTab('register');">
+            Register
+          </button>
+        </div>
+
+        <!-- User Actions (When logged in) -->
+        <div id="userActions" style="display: none; align-items: center; gap: 0.6rem;">
+          <div class="user-menu-btn" id="userMenuDropdownBtn">
+            <div class="avatar-circle" id="userAvatarInitial">U</div>
+            <span id="userEmailDisplay" style="max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">user@domain</span>
+          </div>
+
+          <!-- Admin Quick Link -->
+          <button class="btn-copy-sm" id="adminNavItem" style="display: none; background: #4f46e5; color: white; padding: 0.45rem 0.75rem;" onclick="AdminManager.openAdminModal()">
+            ⚙️ Admin Panel
+          </button>
+
+          <button class="btn-copy-sm" style="background: transparent; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);" onclick="App.handleLogout()" title="Logout">
+            ⏻
+          </button>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ==================== ACTIVE ORDERS LIVE NOTIFICATION BAR ==================== -->
+  <div class="active-orders-container" id="activeOrdersContainer">
+    <!-- Active order cards injected via orders.js -->
+  </div>
+
+  <!-- ==================== MOBILE VIEW SWITCHER ==================== -->
+  <div class="mobile-view-tabs" id="mobileViewTabs">
+    <button type="button" class="mobile-tab-btn active" id="tabBtnServices" onclick="App.switchMobileTab('services')">
+      <span>⚡ Services</span>
+    </button>
+    <button type="button" class="mobile-tab-btn" id="tabBtnCountries" onclick="App.switchMobileTab('countries')">
+      <span>🌍 Select Country</span>
+    </button>
+  </div>
+
+  <!-- ==================== MAIN 2-COLUMN DASHBOARD ==================== -->
+  <main class="main-container">
+    
+    <!-- LEFT SIDEBAR: COUNTRY SELECTOR -->
+    <aside class="sidebar-card" id="countrySidebarCard">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🌍 Select Country</span>
+          <span style="font-size: 0.72rem; color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 0.15rem 0.5rem; border-radius: 99px;">Global</span>
+        </div>
+        <div class="search-input-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" id="countrySearch" class="search-input" placeholder="Search country (USA, India, UK)..." autocomplete="off" />
+        </div>
+        <div style="display: flex; gap: 0.4rem;">
+          <button type="button" class="sort-pill-btn active" id="btnAllCountries" onclick="App.setCountryFilter('all')">All</button>
+          <button type="button" class="sort-pill-btn" id="btnFavCountries" onclick="App.setCountryFilter('fav')">❤️ Favorites</button>
+        </div>
+      </div>
+
+      <div class="country-list" id="countryListContainer">
+        <!-- Country items dynamically rendered with flags & love icons -->
+      </div>
+    </aside>
+
+    <!-- RIGHT/CENTER: SERVICE SELECTOR & CATALOG -->
+    <section class="content-card" id="servicesContentCard">
+      <div class="services-filter-bar">
+        <div style="display: flex; align-items: center; gap: 0.85rem; flex-wrap: wrap;">
+          <h2 style="font-family: var(--font-heading); font-size: 1.15rem; font-weight: 700;">Select Service</h2>
+          <div class="selected-country-badge" id="selectedCountryBadge" onclick="App.switchMobileTab('countries')">
+            🌐 Global (Any Country)
+          </div>
+        </div>
+
+        <!-- Sorting & Search Controls -->
+        <div class="sort-controls-box">
+          <div class="search-input-box" style="min-width: 200px; flex: 1;">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="serviceSearch" class="search-input" placeholder="Search service..." autocomplete="off" />
+          </div>
+
+          <!-- Sort Selector -->
+          <select id="serviceSortSelect" class="sort-select" onchange="App.setServiceSort(this.value)">
+            <option value="popular">🔥 Popular - Default</option>
+            <option value="featured">❤️ Featured (Favorites)</option>
+            <option value="price_low">💰 Price: Low to High</option>
+            <option value="price_high">💎 Price: High to Low</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Services Grid -->
+      <div class="services-grid" id="servicesGrid">
+        <!-- Services dynamically rendered -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== MOBILE BOTTOM APP BAR ==================== -->
+  <nav class="mobile-bottom-bar" id="mobileBottomBar">
+    <button class="mobile-bar-btn active" id="mBarServices" onclick="App.switchMobileTab('services')">
+      <span class="bar-icon">⚡</span>
+      <span class="bar-text">Services</span>
+    </button>
+    <button class="mobile-bar-btn" id="mBarCountries" onclick="App.switchMobileTab('countries')">
+      <span class="bar-icon">🌍</span>
+      <span class="bar-text">Countries</span>
+    </button>
+    <button class="mobile-bar-btn" onclick="App.openModal('depositModal')">
+      <span class="bar-icon">💳</span>
+      <span class="bar-text">Topup</span>
+    </button>
+    <button class="mobile-bar-btn" id="mBarAdmin" style="display: none;" onclick="AdminManager.openAdminModal()">
+      <span class="bar-icon">⚙️</span>
+      <span class="bar-text">Admin</span>
+    </button>
+    <button class="mobile-bar-btn" id="mBarAuth" onclick="App.handleMobileAuthClick()">
+      <span class="bar-icon">👤</span>
+      <span class="bar-text" id="mBarAuthText">Account</span>
+    </button>
+  </nav>
+
+  <!-- ==================== BUY / OPERATOR SELECTION MODAL ==================== -->
+  <div class="modal-overlay" id="buyModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="buyModalTitle">Buy Virtual Number</div>
+        <button class="btn-close-modal" onclick="App.closeModal('buyModal')">&times;</button>
+      </div>
+      <div class="modal-body" id="buyModalBody">
+        <!-- Dynamically injected with operator prices and buy button -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== DEPOSIT / WALLET TOPUP MODAL ==================== -->
+  <div class="modal-overlay" id="depositModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title">💳 Deposit Funds to Wallet</div>
+        <button class="btn-close-modal" onclick="App.closeModal('depositModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="depositForm" onsubmit="App.handleDepositSubmit(event)" style="display: flex; flex-direction: column; gap: 1.25rem;">
+          
+          <div class="form-group">
+            <label class="form-label">Select Payment Gateway</label>
+            <div class="gateway-tabs">
+              <div class="gateway-tab active" data-gateway="cryptomus">
+                <span style="font-size: 1.8rem;">💎</span>
+                <span class="gateway-title">Cryptomus</span>
+                <span style="font-size: 0.72rem; color: #94a3b8;">USDT, BTC, ETH, TON, TRX</span>
+              </div>
+              <div class="gateway-tab" data-gateway="binance">
+                <span style="font-size: 1.8rem;">🟡</span>
+                <span class="gateway-title">Binance Pay</span>
+                <span style="font-size: 0.72rem; color: #94a3b8;">Instant App & QR Checkout</span>
+              </div>
+            </div>
+            <input type="hidden" id="selectedGatewayInput" value="cryptomus" />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Select Quick Amount (USD $)</label>
+            <div class="presets-grid">
+              <button type="button" class="preset-btn" data-amount="5">$5</button>
+              <button type="button" class="preset-btn active" data-amount="10">$10</button>
+              <button type="button" class="preset-btn" data-amount="20">$20</button>
+              <button type="button" class="preset-btn" data-amount="50">$50</button>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Custom Deposit Amount ($ USD)</label>
+            <input type="number" id="depositAmountInput" class="form-control" value="10" min="1" step="0.1" required />
+            <span style="font-size: 0.75rem; color: #94a3b8;">Your account will be credited automatically upon blockchain/payment confirmation.</span>
+          </div>
+
+          <button type="submit" id="depositSubmitBtn" class="btn-primary" style="margin-top: 0.5rem;">
+            Proceed to Payment
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== AUTH MODAL (LOGIN / REGISTER) ==================== -->
+  <div class="modal-overlay" id="authModal">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="modal-title" id="authModalTitle">Account Access</div>
+        <button class="btn-close-modal" onclick="App.closeModal('authModal')">&times;</button>
+      </div>
+      <div class="modal-body">
+        
+        <!-- Google Sign-In Button -->
+        <button type="button" class="btn-google-auth" id="btnGoogleAuth" onclick="App.handleGoogleSignIn()">
+          <svg viewBox="0 0 24 24" width="20" height="20">
+            <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+            <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+            <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+            <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+          </svg>
+          <span>Continue with Google</span>
+        </button>
+
+        <div class="auth-divider" id="authDivider">
+          <span>or continue with email</span>
+        </div>
+
+        <!-- Auth Tabs -->
+        <div id="authTabsContainer" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; background: var(--bg-input); padding: 0.35rem; border-radius: var(--radius-md);">
+          <button type="button" class="preset-btn auth-tab-btn active" data-tab="login" onclick="App.switchAuthTab('login')">Login</button>
+          <button type="button" class="preset-btn auth-tab-btn" data-tab="register" onclick="App.switchAuthTab('register')">Register</button>
+        </div>
+
+        <!-- Login Form -->
+        <form id="loginForm" onsubmit="App.handleLogin(event)" style="display: flex; flex-direction: column; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label">Email Address</label>
+            <input type="email" id="loginEmail" class="form-control" placeholder="name@example.com" required />
+          </div>
+          <div class="form-group">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label class="form-label">Password</label>
+              <a href="#" onclick="App.switchAuthTab('forgot'); return false;" style="font-size: 0.78rem; color: #38bdf8; text-decoration: none;">Forgot password?</a>
+            </div>
+            <input type="password" id="loginPassword" class="form-control" placeholder="••••••••" required />
+          </div>
+          <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">
+            Login to Account
+          </button>
+        </form>
+
+        <!-- Register Form -->
+        <form id="registerForm" onsubmit="App.handleRegister(event)" style="display: none; flex-direction: column; gap: 1rem;">
+          <div class="form-group">
+            <label class="form-label">Email Address</label>
+            <input type="email" id="regEmail" class="form-control" placeholder="name@example.com" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Create Password</label>
+            <input type="password" id="regPassword" class="form-control" placeholder="Minimum 6 characters" minlength="6" required />
+          </div>
+          <div class="form-group">
+            <label class="form-label">Confirm Password</label>
+            <input type="password" id="regPasswordConfirm" class="form-control" placeholder="Confirm password" minlength="6" required />
+          </div>
+          <button type="submit" class="btn-primary" style="margin-top: 0.5rem;">
+            Create Account
+          </button>
+        </form>
+
+        <!-- Forgot / Reset Password Form -->
+        <div id="forgotPasswordContainer" style="display: none; flex-direction: column; gap: 1rem;">
+          
+          <!-- Step 1: Request Code -->
+          <form id="forgotRequestForm" onsubmit="App.handleForgotPasswordRequest(event)" style="display: flex; flex-direction: column; gap: 1rem;">
+            <p style="font-size: 0.84rem; color: #94a3b8; line-height: 1.4;">
+              Enter your registered email address below and we'll generate a 6-digit password reset verification code.
+            </p>
+            <div class="form-group">
+              <label class="form-label">Registered Email Address</label>
+              <input type="email" id="forgotEmail" class="form-control" placeholder="name@example.com" required />
+            </div>
+            <button type="submit" id="btnGetResetCode" class="btn-primary">
+              Send Reset Code
+            </button>
+            <div style="text-align: center; margin-top: 0.25rem;">
+              <a href="#" onclick="App.switchAuthTab('login'); return false;" style="font-size: 0.8rem; color: #94a3b8; text-decoration: none;">
+                ← Back to Login
+              </a>
+            </div>
+          </form>
+
+          <!-- Step 2: Enter Code & New Password -->
+          <form id="forgotResetForm" onsubmit="App.handlePasswordResetSubmit(event)" style="display: none; flex-direction: column; gap: 1rem;">
+            <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: var(--radius-md); padding: 0.75rem; font-size: 0.82rem; color: #6ee7b7;">
+              ✅ Reset code sent! Enter the 6-digit code and your new password below.
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">6-Digit Verification Code</label>
+              <input type="text" id="resetOtpCode" class="form-control" placeholder="e.g. 123456" maxlength="6" required style="font-family: var(--font-mono); font-size: 1.1rem; letter-spacing: 2px;" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">New Password</label>
+              <input type="password" id="resetNewPassword" class="form-control" placeholder="Minimum 6 characters" minlength="6" required />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Confirm New Password</label>
+              <input type="password" id="resetNewPasswordConfirm" class="form-control" placeholder="Confirm new password" minlength="6" required />
+            </div>
+
+            <button type="submit" id="btnSubmitNewPassword" class="btn-primary">
+              🔒 Reset & Login
+            </button>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.25rem;">
+              <a href="#" onclick="App.switchAuthTab('forgot'); return false;" style="font-size: 0.8rem; color: #38bdf8; text-decoration: none;">
+                Resend Code
+              </a>
+              <a href="#" onclick="App.switchAuthTab('login'); return false;" style="font-size: 0.8rem; color: #94a3b8; text-decoration: none;">
+                ← Back to Login
+              </a>
+            </div>
+          </form>
+
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== ADMIN DASHBOARD MODAL ==================== -->
+  <div class="modal-overlay" id="adminModal">
+    <div class="modal-content admin-modal-content">
+      <div class="modal-header">
+        <div class="modal-title" style="display: flex; align-items: center; gap: 0.5rem;">
+          <span>⚙️ Admin Reseller Management Control Panel</span>
+        </div>
+        <button class="btn-close-modal" onclick="AdminManager.closeAdminModal()">&times;</button>
+      </div>
+
+      <!-- Admin Nav Sub-tabs -->
+      <div style="display: flex; gap: 0.5rem; padding: 0.75rem 1.5rem; background: #0c1220; border-bottom: 1px solid var(--border-color); overflow-x: auto;">
+        <button class="preset-btn admin-nav-tab active" data-tab="overview" onclick="AdminManager.switchTab('overview')">📊 Overview & Profit</button>
+        <button class="preset-btn admin-nav-tab" data-tab="users" onclick="AdminManager.switchTab('users')">👥 Manage Users & Balances</button>
+        <button class="preset-btn admin-nav-tab" data-tab="orders" onclick="AdminManager.switchTab('orders')">📋 Order History</button>
+        <button class="preset-btn admin-nav-tab" data-tab="settings" onclick="AdminManager.switchTab('settings')">⚙️ Profit Margin & API Keys</button>
+      </div>
+
+      <div class="modal-body" id="adminModalContent">
+        <!-- Dynamically injected via admin.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== TOAST NOTIFICATION CONTAINER ==================== -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Scripts -->
+  <script src="js/api.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/orders.js"></script>
+  <script src="js/admin.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

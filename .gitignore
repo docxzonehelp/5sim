@@ -1,0 +1,7 @@
+node_modules/
+*.zip
+.system_generated/
+.tempmediaStorage/
+.user_uploaded/
+data.db-wal
+data.db-shm

@@ -809,7 +809,7 @@ const App = {
     // This opens the REAL Google "Choose an account" popup
     const client = google.accounts.oauth2.initTokenClient({
       // ⚠️ IMPORTANT: You must replace this with your real Google Client ID from Google Cloud Console
-      client_id: '1234567890-fake-client-id.apps.googleusercontent.com',
+      client_id: '401135041757-hcj9c3rduefapilad4k2nn1s011kedi8.apps.googleusercontent.com',
       scope: 'email profile openid',
       callback: async (tokenResponse) => {
         if (tokenResponse && tokenResponse.access_token) {

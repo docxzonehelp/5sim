@@ -802,33 +802,54 @@ const App = {
   },
 
   handleGoogleSignIn() {
-    this.openModal('googleSignInModal');
-    this.closeModal('authModal');
-  },
+    if (!window.google || !window.google.accounts) {
+      return showToast('Google Sign-In is loading, please try again in a moment.', 'error');
+    }
 
-  async submitGoogleSignIn(e) {
-    e.preventDefault();
-    const email = document.getElementById('googleEmailInput').value;
+    // This opens the REAL Google "Choose an account" popup
+    const client = google.accounts.oauth2.initTokenClient({
+      // ⚠️ IMPORTANT: You must replace this with your real Google Client ID from Google Cloud Console
+      client_id: '1234567890-fake-client-id.apps.googleusercontent.com',
+      scope: 'email profile openid',
+      callback: async (tokenResponse) => {
+        if (tokenResponse && tokenResponse.access_token) {
+          const btn = document.getElementById('btnGoogleAuth');
+          if (btn) {
+            btn.innerHTML = '⏳ Authenticating...';
+            btn.disabled = true;
+          }
+
+          try {
+            // Fetch user's email and profile from Google using the access token
+            const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+              headers: { Authorization: `Bearer ${tokenResponse.access_token}` }
+            });
+            const profile = await res.json();
+            
+            if (profile.email) {
+              await this.processGoogleAuth({ 
+                email: profile.email, 
+                name: profile.name || profile.email.split('@')[0], 
+                credential: tokenResponse.access_token 
+              });
+            } else {
+              showToast('Could not retrieve email from Google.', 'error');
+            }
+          } catch (error) {
+            console.error('Google Auth Fetch Error:', error);
+            showToast('Failed to verify Google account.', 'error');
+          } finally {
+            if (btn) {
+              btn.innerHTML = '<img src="https://cdn.simpleicons.org/google/4285F4" width="18" style="margin-right:8px;"> Continue with Google';
+              btn.disabled = false;
+            }
+          }
+        }
+      },
+    });
     
-    if (!email || !email.includes('@')) {
-      showToast('Please enter a valid Google email address', 'error');
-      return;
-    }
-
-    const btn = document.getElementById('btnSubmitGoogle');
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '⏳ Loading...';
-    btn.disabled = true;
-
-    try {
-      await this.processGoogleAuth({ email, name: email.split('@')[0] });
-      this.closeModal('googleSignInModal');
-    } catch (error) {
-      console.error(error);
-    } finally {
-      btn.innerHTML = originalText;
-      btn.disabled = false;
-    }
+    // Trigger the popup
+    client.requestAccessToken();
   },
 
   async processGoogleAuth(payload) {

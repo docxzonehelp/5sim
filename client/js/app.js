@@ -177,6 +177,15 @@ const App = {
 
   async init() {
     this.setupEventListeners();
+    document.addEventListener('click', (e) => {
+      const dropdown = document.getElementById('userDropdownMenu');
+      const toggleBtn = document.getElementById('userMenuDropdownBtn');
+      if (dropdown && dropdown.classList.contains('show')) {
+        if (!dropdown.contains(e.target) && (!toggleBtn || !toggleBtn.contains(e.target))) {
+          dropdown.classList.remove('show');
+        }
+      }
+    });
 
     // Set initial mobile view to services
     const mainContainer = document.querySelector('.main-container');
@@ -293,6 +302,9 @@ const App = {
       userActions.style.display = 'flex';
       document.getElementById('userEmailDisplay').innerText = user.email;
       document.getElementById('userAvatarInitial').innerText = user.email.charAt(0).toUpperCase();
+      if (document.getElementById('dropdownAccountId')) {
+        document.getElementById('dropdownAccountId').innerText = `ID: ${user.account_id || '-------'}`;
+      }
       this.renderBalanceUI(user.balance);
 
       if (user.role === 'admin') {
@@ -755,6 +767,96 @@ const App = {
   closeModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) modal.classList.remove('active');
+  },
+
+  // Dropdown Management
+  toggleUserDropdown() {
+    const dropdown = document.getElementById('userDropdownMenu');
+    if (dropdown) {
+      dropdown.classList.toggle('show');
+    }
+  },
+
+  closeUserDropdown() {
+    const dropdown = document.getElementById('userDropdownMenu');
+    if (dropdown) {
+      dropdown.classList.remove('show');
+    }
+  },
+
+  // Settings Modal Management
+  openSettingsModal() {
+    this.openModal('settingsModal');
+    this.switchSettingsTab('security');
+  },
+
+  closeSettingsModal() {
+    this.closeModal('settingsModal');
+  },
+
+  switchSettingsTab(tab) {
+    document.getElementById('tabBtnSecurity').classList.toggle('active', tab === 'security');
+    document.getElementById('tabBtnHistory').classList.toggle('active', tab === 'history');
+    document.getElementById('settingsTabSecurity').style.display = tab === 'security' ? 'block' : 'none';
+    document.getElementById('settingsTabHistory').style.display = tab === 'history' ? 'block' : 'none';
+
+    if (tab === 'history') {
+      this.loadTradeHistory();
+    }
+  },
+
+  async handleSetPassword(e) {
+    e.preventDefault();
+    const oldPasswordInput = document.getElementById('settingsOldPassword').value;
+    const newPassword = document.getElementById('settingsNewPassword').value;
+    const confirmPassword = document.getElementById('settingsConfirmPassword').value;
+
+    if (newPassword !== confirmPassword) {
+      this.showToast('Passwords do not match', 'error');
+      return;
+    }
+
+    try {
+      const payload = { newPassword };
+      // If we decide to use oldPassword later for regular users:
+      if (oldPasswordInput) payload.oldPassword = oldPasswordInput;
+      
+      const res = await API.request('/auth/set-password', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      this.showToast(res.message, 'success');
+      document.getElementById('setPasswordForm').reset();
+    } catch (e) {
+      this.showToast(e.message || 'Failed to update password', 'error');
+    }
+  },
+
+  async loadTradeHistory() {
+    const list = document.getElementById('tradeHistoryList');
+    list.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 2rem;">Loading history...</div>';
+    
+    try {
+      const res = await API.request('/auth/trade-history');
+      if (res.history && res.history.length > 0) {
+        list.innerHTML = res.history.map(item => `
+          <div class="history-item">
+            <div class="history-item-left">
+              <span class="history-title">${item.description}</span>
+              <span class="history-date">${new Date(item.date).toLocaleString()}</span>
+            </div>
+            <div class="history-item-right">
+              <span class="history-amount ${item.type === 'deposit' ? 'amount-positive' : 'amount-negative'}">${item.amount}</span>
+              <span class="status-pill status-${item.status.toLowerCase()}">${item.status}</span>
+            </div>
+          </div>
+        `).join('');
+      } else {
+        list.innerHTML = '<div style="text-align: center; color: var(--text-secondary); padding: 2rem;">No trade history found.</div>';
+      }
+    } catch (e) {
+      list.innerHTML = '<div style="text-align: center; color: #ef4444; padding: 2rem;">Failed to load history</div>';
+    }
   },
 
   switchAuthTab(tab) {

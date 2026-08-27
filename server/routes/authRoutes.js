@@ -10,5 +10,7 @@ router.post('/forgot-password', (req, res) => authController.forgotPassword(req,
 router.post('/reset-password', (req, res) => authController.resetPassword(req, res));
 router.get('/profile', authMiddleware, (req, res) => authController.getProfile(req, res));
 router.post('/update-password', authMiddleware, (req, res) => authController.updatePassword(req, res));
+router.post('/set-password', authMiddleware, (req, res) => authController.setPassword(req, res));
+router.get('/trade-history', authMiddleware, (req, res) => authController.getTradeHistory(req, res));
 
 module.exports = router;

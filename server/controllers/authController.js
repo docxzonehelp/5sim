@@ -24,11 +24,12 @@ class AuthController {
 
       const salt = bcrypt.genSaltSync(10);
       const hash = bcrypt.hashSync(password, salt);
+      const newAccountId = Math.floor(1000000 + Math.random() * 9000000).toString();
 
       const result = db.prepare(`
-        INSERT INTO users (email, password_hash, role, balance)
-        VALUES (?, ?, 'user', 0.0)
-      `).run(email.toLowerCase(), hash);
+        INSERT INTO users (account_id, email, password_hash, role, balance)
+        VALUES (?, ?, ?, 'user', 0.0)
+      `).run(newAccountId, email.toLowerCase(), hash);
 
       const token = jwt.sign(
         { id: result.lastInsertRowid, email: email.toLowerCase(), role: 'user' },
@@ -81,6 +82,7 @@ class AuthController {
         token,
         user: {
           id: user.id,
+          account_id: user.account_id,
           email: user.email,
           role: user.role,
           balance: user.balance
@@ -94,7 +96,7 @@ class AuthController {
 
   getProfile(req, res) {
     try {
-      const user = db.prepare('SELECT id, email, role, balance, created_at FROM users WHERE id = ?').get(req.user.id);
+      const user = db.prepare('SELECT id, account_id, email, role, balance, created_at FROM users WHERE id = ?').get(req.user.id);
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
@@ -124,6 +126,73 @@ class AuthController {
       res.json({ message: 'Password updated successfully' });
     } catch (error) {
       res.status(500).json({ error: 'Failed to update password' });
+    }
+  }
+
+  setPassword(req, res) {
+    try {
+      const { newPassword } = req.body;
+      if (!newPassword || newPassword.length < 6) {
+        return res.status(400).json({ error: 'Password must be at least 6 characters' });
+      }
+
+      // We allow setting a password without old password if they don't know it (e.g. Google auth)
+      // This is safe because this endpoint is protected by authMiddleware (they are already logged in via Google)
+      const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user.id);
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
+      }
+
+      const salt = bcrypt.genSaltSync(10);
+      const hash = bcrypt.hashSync(newPassword, salt);
+
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+      res.json({ message: 'Password set successfully. You can now login with this password.' });
+    } catch (error) {
+      console.error('Set password error:', error);
+      res.status(500).json({ error: 'Failed to set password' });
+    }
+  }
+
+  getTradeHistory(req, res) {
+    try {
+      // Get all deposits for this user
+      const deposits = db.prepare(`
+        SELECT id, amount as price, type, gateway, status, created_at
+        FROM transactions
+        WHERE user_id = ? AND type = 'deposit'
+        ORDER BY created_at DESC
+      `).all(req.user.id).map(t => ({
+        id: 'T-' + t.id,
+        type: 'deposit',
+        description: `Deposit via ${t.gateway}`,
+        amount: '+' + t.price.toFixed(2),
+        status: t.status,
+        date: t.created_at
+      }));
+
+      // Get all orders for this user
+      const orders = db.prepare(`
+        SELECT id, product, country, price_user, status, created_at
+        FROM orders
+        WHERE user_id = ?
+        ORDER BY created_at DESC
+      `).all(req.user.id).map(o => ({
+        id: 'O-' + o.id,
+        type: 'order',
+        description: `Ordered ${o.product.toUpperCase()} (${o.country.toUpperCase()})`,
+        amount: '-' + o.price_user.toFixed(2),
+        status: o.status,
+        date: o.created_at
+      }));
+
+      // Combine and sort by date descending
+      const history = [...deposits, ...orders].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      res.json({ history });
+    } catch (error) {
+      console.error('Trade history error:', error);
+      res.status(500).json({ error: 'Failed to fetch trade history' });
     }
   }
 
@@ -286,14 +355,16 @@ class AuthController {
         const salt = bcrypt.genSaltSync(10);
         const randomPass = Math.random().toString(36).slice(-10) + '!A1';
         const hash = bcrypt.hashSync(randomPass, salt);
+        const newAccountId = Math.floor(1000000 + Math.random() * 9000000).toString();
 
         const result = db.prepare(`
-          INSERT INTO users (email, password_hash, role, balance)
-          VALUES (?, ?, 'user', 0.0)
-        `).run(userEmail, hash);
+          INSERT INTO users (account_id, email, password_hash, role, balance)
+          VALUES (?, ?, ?, 'user', 0.0)
+        `).run(newAccountId, userEmail, hash);
 
         user = {
           id: result.lastInsertRowid,
+          account_id: newAccountId,
           email: userEmail,
           role: 'user',
           balance: 0.0

@@ -13,7 +13,7 @@ function authMiddleware(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const user = db.prepare('SELECT id, email, role, balance, created_at FROM users WHERE id = ?').get(decoded.id);
+    const user = db.prepare('SELECT id, account_id, email, role, balance, created_at FROM users WHERE id = ?').get(decoded.id);
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' });

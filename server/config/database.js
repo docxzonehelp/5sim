@@ -13,6 +13,7 @@ function initDatabase() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id TEXT UNIQUE,
       email TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
       role TEXT DEFAULT 'user',
@@ -20,6 +21,34 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Migration: Add account_id to existing users table if it doesn't exist
+  try {
+    const tableInfo = db.pragma("table_info(users)");
+    const hasAccountId = tableInfo.some(col => col.name === 'account_id');
+    
+    if (!hasAccountId) {
+      db.exec(`ALTER TABLE users ADD COLUMN account_id TEXT;`);
+      db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_account_id ON users(account_id);`);
+      console.log('o. Added account_id column to users table');
+    }
+
+    // Backfill account_id for existing users
+    const usersWithoutId = db.prepare('SELECT id FROM users WHERE account_id IS NULL').all();
+    if (usersWithoutId.length > 0) {
+      const updateStmt = db.prepare('UPDATE users SET account_id = ? WHERE id = ?');
+      const transaction = db.transaction((users) => {
+        for (const user of users) {
+          const newId = Math.floor(1000000 + Math.random() * 9000000).toString();
+          updateStmt.run(newId, user.id);
+        }
+      });
+      transaction(usersWithoutId);
+      console.log(`o. Generated account_id for ${usersWithoutId.length} existing users`);
+    }
+  } catch (e) {
+    console.error('Migration error for account_id:', e);
+  }
 
   // Orders table
   db.exec(`

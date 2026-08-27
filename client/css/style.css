@@ -253,6 +253,115 @@ body {
 }
 
 /* ==========================================================================
+   USER DROPDOWN MENU
+   ========================================================================== */
+.user-dropdown-menu {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+  z-index: 1000;
+  flex-direction: column;
+  overflow: hidden;
+  animation: slide-down 0.2s ease;
+}
+
+.user-dropdown-menu.show {
+  display: flex;
+}
+
+.dropdown-header {
+  padding: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: #fff;
+  background: rgba(255,255,255,0.02);
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: var(--border-color);
+  width: 100%;
+}
+
+.dropdown-item {
+  padding: 0.85rem 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 0.95rem;
+  transition: all 0.2s ease;
+}
+
+.dropdown-item:hover {
+  background: var(--bg-card-hover);
+  color: #fff;
+}
+
+.dropdown-item.text-danger {
+  color: #ef4444;
+}
+.dropdown-item.text-danger:hover {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+/* ==========================================================================
+   TRADE HISTORY ITEMS
+   ========================================================================== */
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.history-item-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.history-item-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.history-title {
+  color: #fff;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.history-date {
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.history-amount {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 1.1rem;
+}
+
+.amount-positive { color: #10b981; }
+.amount-negative { color: #ef4444; }
+
+/* ==========================================================================
    ACTIVE ORDERS FLOATING / TOP BAR
    ========================================================================== */
 

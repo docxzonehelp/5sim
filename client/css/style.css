@@ -1499,6 +1499,22 @@ body {
 
   .order-main-info {
     width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .order-number-row {
+    flex-wrap: wrap;
+  }
+
+  .order-phone {
+    font-size: 1.15rem; /* smaller on mobile */
+    word-break: break-all; /* if very long */
+  }
+
+  .order-meta {
+    font-size: 0.75rem;
+    flex-wrap: wrap;
+    line-height: 1.4;
   }
 
   .order-sms-box {

@@ -28,15 +28,50 @@ class SimController {
     try {
       const { country = 'any', operator = 'any' } = req.query;
       const rawProducts = await fiveSimService.getProducts(country, operator);
+      
+      // We use the full matrix to calculate true minimums (with stock > 0)
+      // because 5SIM's /guest/products endpoint returns minimum price ignoring stock.
+      let trueMinimums = {};
+      try {
+        const fullPrices = await fiveSimService.getPrices(null, null);
+        for (const [cKey, cData] of Object.entries(fullPrices)) {
+          // If a specific country is requested, only look at that country
+          if (country !== 'any' && cKey.toLowerCase() !== country.toLowerCase()) {
+            continue;
+          }
+          for (const [pKey, pData] of Object.entries(cData)) {
+            let minCostForProduct = Infinity;
+            for (const [opKey, opData] of Object.entries(pData)) {
+               // If a specific operator is requested, only look at that operator
+               if (operator !== 'any' && opKey.toLowerCase() !== operator.toLowerCase()) {
+                 continue;
+               }
+               if ((opData.count || 0) > 0 && opData.cost < minCostForProduct) {
+                  minCostForProduct = opData.cost;
+               }
+            }
+            if (minCostForProduct !== Infinity) {
+               if (!trueMinimums[pKey] || minCostForProduct < trueMinimums[pKey]) {
+                  trueMinimums[pKey] = minCostForProduct;
+               }
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to calculate true minimums:', err.message);
+      }
+
       const margin = this.getProfitMargin();
 
       const productsWithMarkup = {};
       for (const [prodKey, prodData] of Object.entries(rawProducts)) {
+        // Use true minimum if available, else fallback to 5sim's reported raw price
+        const basePrice = (trueMinimums[prodKey] !== undefined) ? trueMinimums[prodKey] : prodData.Price;
         productsWithMarkup[prodKey] = {
           Category: prodData.Category,
           Qty: prodData.Qty,
-          OriginalPrice: prodData.Price,
-          Price: this.applyMarkup(prodData.Price, margin)
+          OriginalPrice: basePrice,
+          Price: this.applyMarkup(basePrice, margin)
         };
       }
 

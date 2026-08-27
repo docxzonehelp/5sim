@@ -53,8 +53,21 @@ class SimController {
       const rawPrices = await fiveSimService.getPrices(country, product);
       const margin = this.getProfitMargin();
 
+      // 5SIM returns { product: { country: { operator: {...} } } } if we only query by product.
+      // We must normalize it to { country: { product: { operator: {...} } } } so the frontend logic works.
+      let normalizedPrices = rawPrices;
+      if (product && (!country || country.toLowerCase() === 'any')) {
+        const pKey = product.toLowerCase();
+        if (rawPrices[pKey]) {
+          normalizedPrices = {};
+          for (const cKey in rawPrices[pKey]) {
+            normalizedPrices[cKey] = { [pKey]: rawPrices[pKey][cKey] };
+          }
+        }
+      }
+
       // Transform prices with +margin% markup
-      const transformedPrices = JSON.parse(JSON.stringify(rawPrices));
+      const transformedPrices = JSON.parse(JSON.stringify(normalizedPrices));
       
       for (const cKey in transformedPrices) {
         for (const pKey in transformedPrices[cKey]) {

@@ -1345,6 +1345,13 @@ body {
     padding: 0.45rem 0.6rem !important;
     font-size: 0.8rem !important;
   }
+  #userEmailDisplay {
+    display: none !important;
+  }
+  .user-menu-btn {
+    padding: 0.4rem;
+    gap: 0;
+  }
 
   /* Main Container Layout on Mobile */
   .main-container {

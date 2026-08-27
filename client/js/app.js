@@ -616,11 +616,44 @@ const App = {
       let resolvedCountry = countryKey;
 
       if (!countryPrices) {
-        // If in global mode or not directly under countryKey, pick first country key from matrix
-        const firstCountry = Object.keys(prices)[0];
-        if (firstCountry && prices[firstCountry] && prices[firstCountry][product]) {
-          countryPrices = prices[firstCountry][product];
-          resolvedCountry = firstCountry;
+        // If in global mode or not directly under countryKey, find the country with the cheapest available price
+        let minPrice = Infinity;
+        let bestCountry = null;
+        
+        for (const [cName, cData] of Object.entries(prices)) {
+          if (cData && cData[product]) {
+            // Find minimum cost among operators with stock > 0
+            for (const [opName, opData] of Object.entries(cData[product])) {
+              if ((opData.count || 0) > 0 && opData.cost < minPrice) {
+                minPrice = opData.cost;
+                bestCountry = cName;
+              }
+            }
+          }
+        }
+        
+        // Fallback if no stock found anywhere, just find absolute minimum cost
+        if (!bestCountry) {
+          for (const [cName, cData] of Object.entries(prices)) {
+            if (cData && cData[product]) {
+              for (const [opName, opData] of Object.entries(cData[product])) {
+                if (opData.cost < minPrice) {
+                  minPrice = opData.cost;
+                  bestCountry = cName;
+                }
+              }
+            }
+          }
+        }
+        
+        // If still nothing, just pick first country alphabetically (fallback)
+        if (!bestCountry) {
+            bestCountry = Object.keys(prices)[0];
+        }
+
+        if (bestCountry && prices[bestCountry] && prices[bestCountry][product]) {
+          countryPrices = prices[bestCountry][product];
+          resolvedCountry = bestCountry;
         }
       }
 

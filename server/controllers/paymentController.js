@@ -20,7 +20,7 @@ class PaymentController {
       `, [userId, numAmount, `Cryptomus deposit initiated for user #\${userId}`]);
 
       const transId = transResult.insertId;
-      const baseUrl = `\${req.protocol}://\${req.get('host')}`;
+      const baseUrl = 'https://salmon-goose-401769.hostingersite.com';
 
       let invoice;
       try {

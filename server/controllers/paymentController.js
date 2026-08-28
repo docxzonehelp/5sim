@@ -25,7 +25,7 @@ class PaymentController {
       let invoice;
       try {
         invoice = await cryptomusService.createInvoice({
-          orderId: `DEP_\${transId}`,
+          orderId: `DEP_${transId}_${Date.now()}`,
           amount: numAmount,
           currency: 'USD',
           urlCallback: `\${baseUrl}/api/payment/cryptomus/webhook`,

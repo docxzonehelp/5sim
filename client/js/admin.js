@@ -278,10 +278,18 @@ const AdminManager = {
   },
 
   async promptBalance(userId, email) {
-    const amountStr = prompt(`Enter amount to ADD for ${email} (in $):`, '10');
-    if (!amountStr) return;
+    document.getElementById('adminBalanceUserId').value = userId;
+    document.getElementById('adminBalanceEmailLabel').innerText = `Add amount for ${email}`;
+    document.getElementById('adminBalanceAmount').value = '10';
+    App.openModal('adminBalanceModal');
+  },
 
+  async submitBalance(e) {
+    e.preventDefault();
+    const userId = document.getElementById('adminBalanceUserId').value;
+    const amountStr = document.getElementById('adminBalanceAmount').value;
     const amount = parseFloat(amountStr);
+    
     if (isNaN(amount) || amount <= 0) {
       showToast('Invalid amount', 'error');
       return;
@@ -290,6 +298,7 @@ const AdminManager = {
     try {
       const res = await API.admin.updateUserBalance(userId, amount, 'add', 'Admin Manual Credit');
       showToast(res.message || 'Balance updated', 'success');
+      App.closeModal('adminBalanceModal');
       this.renderUsers(document.getElementById('adminModalContent'));
       // If current user modified own balance, update state
       if (State.user && State.user.id === userId) {

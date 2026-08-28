@@ -239,6 +239,16 @@ const App = {
     }
   },
 
+  copyText(text) {
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => {
+      this.showToast('Copied: ' + text, 'success');
+    }).catch(err => {
+      console.error('Failed to copy:', err);
+      this.showToast('Failed to copy', 'error');
+    });
+  },
+
   setupEventListeners() {
     // Country search filter
     const countrySearch = document.getElementById('countrySearch');

@@ -4,8 +4,8 @@ const pool = require('../config/database');
 
 class BinancePayService {
   async getCredentials() {
-    const [keyRows] = await pool.query(`SELECT value FROM settings WHERE \\`key\\` = 'binance_api_key'`);
-    const [secretRows] = await pool.query(`SELECT value FROM settings WHERE \\`key\\` = 'binance_secret_key'`);
+    const [keyRows] = await pool.query(`SELECT value FROM settings WHERE \`key\` = 'binance_api_key'`);
+    const [secretRows] = await pool.query(`SELECT value FROM settings WHERE \`key\` = 'binance_secret_key'`);
 
     return {
       apiKey: keyRows[0]?.value || process.env.BINANCE_PAY_API_KEY || '',

@@ -181,7 +181,7 @@ class AdminController {
 
   async getSettings(req, res) {
     try {
-      const [rows] = await pool.query('SELECT \\`key\\`, value FROM settings');
+      const [rows] = await pool.query('SELECT \`key\`, value FROM settings');
       const settings = {};
       rows.forEach(r => {
         settings[r.key] = r.value;
@@ -200,7 +200,7 @@ class AdminController {
         await connection.beginTransaction();
         for (const [key, value] of Object.entries(settings)) {
           await connection.query(`
-            INSERT INTO settings (\\`key\\`, value, updated_at) 
+            INSERT INTO settings (\`key\`, value, updated_at) 
             VALUES (?, ?, CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = CURRENT_TIMESTAMP
           `, [key, String(value)]);

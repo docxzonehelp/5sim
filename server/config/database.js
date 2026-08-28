@@ -117,7 +117,7 @@ async function initDatabase() {
     // Settings table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS settings (
-        \`key\` VARCHAR(255) PRIMARY KEY,
+        `key` VARCHAR(255) PRIMARY KEY,
         value TEXT,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
       );
@@ -126,7 +126,7 @@ async function initDatabase() {
     // Insert default settings if not exist
     const insertSetting = async (key, value) => {
       await pool.query(
-        'INSERT IGNORE INTO settings (\`key\`, value) VALUES (?, ?)',
+        'INSERT IGNORE INTO settings (`key`, value) VALUES (?, ?)',
         [key, value]
       );
     };

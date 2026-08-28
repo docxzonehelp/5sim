@@ -171,7 +171,7 @@ class AuthController {
       const deposits = depositRows.map(t => ({
         id: 'T-' + t.id,
         type: 'deposit',
-        description: \`Deposit via \${t.gateway}\`,
+        description: `Deposit via \${t.gateway}`,
         amount: '+' + parseFloat(t.price).toFixed(2),
         status: t.status,
         date: t.created_at
@@ -188,7 +188,7 @@ class AuthController {
       const orders = orderRows.map(o => ({
         id: 'O-' + o.id,
         type: 'order',
-        description: \`Ordered \${o.product.toUpperCase()} (\${o.country.toUpperCase()})\`,
+        description: `Ordered \${o.product.toUpperCase()} (\${o.country.toUpperCase()})`,
         amount: '-' + parseFloat(o.price_user).toFixed(2),
         status: o.status,
         date: o.created_at
@@ -221,13 +221,13 @@ class AuthController {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
 
       // Expire old codes and insert new one (valid for 15 mins)
-      await pool.query(\`UPDATE password_resets SET used = 1 WHERE email = ?\`, [cleanEmail]);
-      await pool.query(\`
+      await pool.query(`UPDATE password_resets SET used = 1 WHERE email = ?`, [cleanEmail]);
+      await pool.query(`
         INSERT INTO password_resets (email, code, expires_at, used)
         VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 0)
-      \`, [cleanEmail, code]);
+      `, [cleanEmail, code]);
 
-      console.log(\`🔑 [PASSWORD RESET] Email: \${cleanEmail} | OTP Code: \${code}\`);
+      console.log(`🔑 [PASSWORD RESET] Email: \${cleanEmail} | OTP Code: \${code}`);
 
       // Send the email using Nodemailer
       if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
@@ -243,17 +243,17 @@ class AuthController {
         });
 
         await transporter.sendMail({
-          from: \`"5SIM Reseller" <\${process.env.SMTP_USER}>\`,
+          from: `"5SIM Reseller" <\${process.env.SMTP_USER}>`,
           to: cleanEmail,
           subject: "Password Reset Verification Code",
-          html: \`<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+          html: `<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
                   <h2 style="color: #1e293b; text-align: center;">Password Reset Request</h2>
                   <p style="color: #475569; font-size: 16px;">We received a request to reset your password. Here is your 6-digit verification code:</p>
                   <div style="background-color: #f1f5f9; padding: 15px; text-align: center; border-radius: 8px; margin: 20px 0;">
                     <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #3b82f6;">\${code}</span>
                   </div>
                   <p style="color: #475569; font-size: 14px;">This code will expire in 15 minutes. If you did not request a password reset, please ignore this email.</p>
-                </div>\`
+                </div>`
         });
       } else {
         console.warn('⚠️ SMTP settings not configured. Email was not sent.');
@@ -284,11 +284,11 @@ class AuthController {
       const cleanEmail = email.toLowerCase().trim();
       const cleanCode = code.toString().trim();
 
-      const [resetRecords] = await pool.query(\`
+      const [resetRecords] = await pool.query(`
         SELECT * FROM password_resets 
         WHERE email = ? AND code = ? AND used = 0 AND expires_at > NOW()
         ORDER BY id DESC LIMIT 1
-      \`, [cleanEmail, cleanCode]);
+      `, [cleanEmail, cleanCode]);
 
       if (resetRecords.length === 0) {
         return res.status(400).json({ error: 'Invalid or expired reset code. Please request a new code.' });
@@ -375,10 +375,10 @@ class AuthController {
         const hash = bcrypt.hashSync(randomPass, salt);
         const newAccountId = Math.floor(1000000 + Math.random() * 9000000).toString();
 
-        const [result] = await pool.query(\`
+        const [result] = await pool.query(`
           INSERT INTO users (account_id, email, password_hash, role, balance)
           VALUES (?, ?, ?, 'user', 0.00)
-        \`, [newAccountId, userEmail, hash]);
+        `, [newAccountId, userEmail, hash]);
 
         user = {
           id: result.insertId,
@@ -388,9 +388,9 @@ class AuthController {
           balance: 0.0
         };
 
-        console.log(\`👤 New user registered via Google: \${userEmail}\`);
+        console.log(`👤 New user registered via Google: \${userEmail}`);
       } else {
-        console.log(\`👤 User logged in via Google: \${userEmail}\`);
+        console.log(`👤 User logged in via Google: \${userEmail}`);
       }
 
       const token = jwt.sign(

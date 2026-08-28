@@ -3,7 +3,7 @@ const pool = require('../config/database');
 
 class SimController {
   async getProfitMargin() {
-    const [rows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'profit_margin'\`);
+    const [rows] = await pool.query(`SELECT value FROM settings WHERE \\`key\\` = 'profit_margin'`);
     const margin = parseFloat(rows[0]?.value || '20');
     return isNaN(margin) ? 20 : margin;
   }
@@ -113,14 +113,14 @@ class SimController {
       } catch (err) {
         let msg = err.message || 'No numbers available';
         if (msg.includes('no free phones') || msg.includes('no numbers')) {
-          msg = \`No numbers currently available for \${operator.toUpperCase()} in \${country.toUpperCase()}. Please choose another carrier.\`;
+          msg = `No numbers currently available for \${operator.toUpperCase()} in \${country.toUpperCase()}. Please choose another carrier.`;
         }
         return res.status(400).json({ error: msg });
       }
 
       if (!orderData || !orderData.phone || !orderData.id) {
         return res.status(400).json({ 
-          error: \`No number available for \${operator.toUpperCase()}. Please try another operator with available stock.\` 
+          error: `No number available for \${operator.toUpperCase()}. Please try another operator with available stock.` 
         });
       }
 
@@ -135,7 +135,7 @@ class SimController {
           console.error('Auto-cancel failed on low balance:', e);
         }
         return res.status(400).json({
-          error: \`Insufficient balance. Required: \${priceUser}, Current: \${user.balance}\`
+          error: `Insufficient balance. Required: \${priceUser}, Current: \${user.balance}`
         });
       }
 
@@ -151,12 +151,12 @@ class SimController {
         await connection.query('UPDATE users SET balance = balance - ? WHERE id = ?', [priceUser, userId]);
 
         // Insert order record
-        const [orderResult] = await connection.query(\`
+        const [orderResult] = await connection.query(`
           INSERT INTO orders (
             user_id, fivesim_order_id, phone, country, product, operator,
             cost_fivesim, price_user, status, expires_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        \`, [
+        `, [
           userId,
           orderData.id,
           orderData.phone,
@@ -172,14 +172,14 @@ class SimController {
         const dbOrderId = orderResult.insertId;
 
         // Insert transaction record
-        await connection.query(\`
+        await connection.query(`
           INSERT INTO transactions (user_id, type, amount, status, gateway, payment_id, details)
           VALUES (?, 'purchase', ?, 'completed', 'internal', ?, ?)
-        \`, [
+        `, [
           userId,
           priceUser,
           orderData.id.toString(),
-          \`Purchased \${product.toUpperCase()} number (\${orderData.phone}) in \${country.toUpperCase()}\`
+          `Purchased \${product.toUpperCase()} number (\${orderData.phone}) in \${country.toUpperCase()}`
         ]);
 
         await connection.commit();
@@ -256,22 +256,22 @@ class SimController {
 
         if ((newStatus === 'TIMEOUT' || newStatus === 'CANCELED') && !isAlreadyFinal && !order.sms_code) {
           await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [order.price_user, userId]);
-          await connection.query(\`
+          await connection.query(`
             INSERT INTO transactions (user_id, type, amount, status, gateway, payment_id, details)
             VALUES (?, 'refund', ?, 'completed', 'internal', ?, ?)
-          \`, [
+          `, [
             userId,
             order.price_user,
             order.fivesim_order_id.toString(),
-            \`Auto Refund for expired/cancelled order #\${order.id} (\${order.product})\`
+            `Auto Refund for expired/cancelled order #\${order.id} (\${order.product})`
           ]);
           await connection.query('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newStatus, order.id]);
         } else {
-          await connection.query(\`
+          await connection.query(`
             UPDATE orders 
             SET status = ?, sms_code = ?, sms_text = ?, updated_at = CURRENT_TIMESTAMP
             WHERE id = ?
-          \`, [newStatus, smsCode, smsText, order.id]);
+          `, [newStatus, smsCode, smsText, order.id]);
         }
         await connection.commit();
       } catch (err) {
@@ -300,11 +300,11 @@ class SimController {
   async getActiveOrders(req, res) {
     try {
       const userId = req.user.id;
-      const [orders] = await pool.query(\`
+      const [orders] = await pool.query(`
         SELECT * FROM orders 
         WHERE user_id = ? AND status IN ('PENDING', 'RECEIVED')
         ORDER BY id DESC
-      \`, [userId]);
+      `, [userId]);
 
       res.json({ orders });
     } catch (error) {
@@ -319,12 +319,12 @@ class SimController {
       const page = parseInt(req.query.page) || 1;
       const offset = (page - 1) * limit;
 
-      const [orders] = await pool.query(\`
+      const [orders] = await pool.query(`
         SELECT * FROM orders 
         WHERE user_id = ?
         ORDER BY id DESC
         LIMIT ? OFFSET ?
-      \`, [userId, limit, offset]);
+      `, [userId, limit, offset]);
 
       const [counts] = await pool.query('SELECT COUNT(*) as count FROM orders WHERE user_id = ?', [userId]);
       const totalCount = counts[0].count;
@@ -347,7 +347,7 @@ class SimController {
       const order = orders[0];
 
       if (order.status === 'CANCELED' || order.status === 'TIMEOUT' || order.status === 'FINISHED' || order.status === 'BANNED') {
-        return res.status(400).json({ error: \`Order is already \${order.status}\` });
+        return res.status(400).json({ error: `Order is already \${order.status}` });
       }
 
       if (order.sms_code) {
@@ -366,14 +366,14 @@ class SimController {
       try {
         await connection.beginTransaction();
         await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [order.price_user, userId]);
-        await connection.query(\`
+        await connection.query(`
           INSERT INTO transactions (user_id, type, amount, status, gateway, payment_id, details)
           VALUES (?, 'refund', ?, 'completed', 'internal', ?, ?)
-        \`, [
+        `, [
           userId,
           order.price_user,
           order.fivesim_order_id.toString(),
-          \`Refund for cancelled order #\${order.id} (\${order.product})\`
+          `Refund for cancelled order #\${order.id} (\${order.product})`
         ]);
         await connection.query("UPDATE orders SET status = 'CANCELED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [order.id]);
         await connection.commit();
@@ -434,7 +434,7 @@ class SimController {
       const order = orders[0];
 
       if (order.status === 'BANNED' || order.status === 'CANCELED' || order.status === 'TIMEOUT') {
-        return res.status(400).json({ error: \`Order is already \${order.status}\` });
+        return res.status(400).json({ error: `Order is already \${order.status}` });
       }
 
       try {
@@ -448,14 +448,14 @@ class SimController {
       try {
         await connection.beginTransaction();
         await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [order.price_user, userId]);
-        await connection.query(\`
+        await connection.query(`
           INSERT INTO transactions (user_id, type, amount, status, gateway, payment_id, details)
           VALUES (?, 'refund', ?, 'completed', 'internal', ?, ?)
-        \`, [
+        `, [
           userId,
           order.price_user,
           order.fivesim_order_id.toString(),
-          \`Refund for banned/bad number order #\${order.id}\`
+          `Refund for banned/bad number order #\${order.id}`
         ]);
         await connection.query("UPDATE orders SET status = 'BANNED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [order.id]);
         await connection.commit();

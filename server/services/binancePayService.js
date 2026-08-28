@@ -4,8 +4,8 @@ const pool = require('../config/database');
 
 class BinancePayService {
   async getCredentials() {
-    const [keyRows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'binance_api_key'\`);
-    const [secretRows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'binance_secret_key'\`);
+    const [keyRows] = await pool.query(`SELECT value FROM settings WHERE \\`key\\` = 'binance_api_key'`);
+    const [secretRows] = await pool.query(`SELECT value FROM settings WHERE \\`key\\` = 'binance_secret_key'`);
 
     return {
       apiKey: keyRows[0]?.value || process.env.BINANCE_PAY_API_KEY || '',
@@ -23,7 +23,7 @@ class BinancePayService {
   }
 
   generateSignature(timestamp, nonce, bodyStr, secretKey) {
-    const payload = \`\${timestamp}\\n\${nonce}\\n\${bodyStr}\\n\`;
+    const payload = `\${timestamp}\\n\${nonce}\\n\${bodyStr}\\n`;
     return crypto.createHmac('sha512', secretKey).update(payload).digest('hex').toUpperCase();
   }
 

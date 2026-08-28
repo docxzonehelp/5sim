@@ -4,8 +4,8 @@ const pool = require('../config/database');
 
 class CryptomusService {
   async getCredentials() {
-    const [merchantRows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'cryptomus_merchant_id'\`);
-    const [keyRows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'cryptomus_api_key'\`);
+    const [merchantRows] = await pool.query(`SELECT value FROM settings WHERE \\`key\\` = 'cryptomus_merchant_id'`);
+    const [keyRows] = await pool.query(`SELECT value FROM settings WHERE \\`key\\` = 'cryptomus_api_key'`);
 
     return {
       merchantId: merchantRows[0]?.value || process.env.CRYPTOMUS_MERCHANT_ID || '',

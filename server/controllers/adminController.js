@@ -26,30 +26,30 @@ class AdminController {
       const userBalanceSum = balanceRows[0].sum || 0;
       
       // Calculate total profit from non-cancelled orders
-      const [profitRows] = await pool.query(\`
+      const [profitRows] = await pool.query(`
         SELECT 
           SUM(price_user - cost_fivesim) as total_profit,
           SUM(price_user) as total_sales,
           SUM(cost_fivesim) as total_cost
         FROM orders 
         WHERE status IN ('RECEIVED', 'FINISHED')
-      \`);
+      `);
       const profitRow = profitRows[0];
 
-      const [depositRows] = await pool.query(\`
+      const [depositRows] = await pool.query(`
         SELECT SUM(amount) as sum FROM transactions 
         WHERE type = 'deposit' AND status = 'completed'
-      \`);
+      `);
       const totalDeposits = depositRows[0].sum || 0;
 
       // Recent 10 orders
-      const [recentOrders] = await pool.query(\`
+      const [recentOrders] = await pool.query(`
         SELECT o.*, u.email as user_email 
         FROM orders o
         JOIN users u ON o.user_id = u.id
         ORDER BY o.id DESC
         LIMIT 10
-      \`);
+      `);
 
       res.json({
         master: masterProfile,
@@ -73,7 +73,7 @@ class AdminController {
 
   async getUsers(req, res) {
     try {
-      const [users] = await pool.query(\`
+      const [users] = await pool.query(`
         SELECT 
           u.id, u.email, u.role, u.balance, u.created_at,
           COUNT(o.id) as order_count,
@@ -82,7 +82,7 @@ class AdminController {
         LEFT JOIN orders o ON u.id = o.user_id
         GROUP BY u.id
         ORDER BY u.id DESC
-      \`);
+      `);
 
       res.json({ users });
     } catch (error) {
@@ -123,10 +123,10 @@ class AdminController {
       try {
         await connection.beginTransaction();
         await connection.query('UPDATE users SET balance = ? WHERE id = ?', [newBalance, userId]);
-        await connection.query(\`
+        await connection.query(`
           INSERT INTO transactions (user_id, type, amount, status, gateway, details)
           VALUES (?, 'admin_adjustment', ?, 'completed', 'admin', ?)
-        \`, [userId, transAmount, \`Admin adjustment (\${action}): \${note || 'Manual adjustment'}\`]);
+        `, [userId, transAmount, `Admin adjustment (\${action}): \${note || 'Manual adjustment'}`]);
         await connection.commit();
       } catch (err) {
         await connection.rollback();
@@ -136,7 +136,7 @@ class AdminController {
       }
 
       res.json({
-        message: \`Balance updated for \${user.email}\`,
+        message: `Balance updated for \${user.email}`,
         newBalance
       });
     } catch (error) {
@@ -148,13 +148,13 @@ class AdminController {
   async getAllOrders(req, res) {
     try {
       const limit = parseInt(req.query.limit) || 100;
-      const [orders] = await pool.query(\`
+      const [orders] = await pool.query(`
         SELECT o.*, u.email as user_email
         FROM orders o
         JOIN users u ON o.user_id = u.id
         ORDER BY o.id DESC
         LIMIT ?
-      \`, [limit]);
+      `, [limit]);
 
       res.json({ orders });
     } catch (error) {
@@ -165,13 +165,13 @@ class AdminController {
   async getAllTransactions(req, res) {
     try {
       const limit = parseInt(req.query.limit) || 100;
-      const [transactions] = await pool.query(\`
+      const [transactions] = await pool.query(`
         SELECT t.*, u.email as user_email
         FROM transactions t
         JOIN users u ON t.user_id = u.id
         ORDER BY t.id DESC
         LIMIT ?
-      \`, [limit]);
+      `, [limit]);
 
       res.json({ transactions });
     } catch (error) {
@@ -181,7 +181,7 @@ class AdminController {
 
   async getSettings(req, res) {
     try {
-      const [rows] = await pool.query('SELECT \\\`key\\\`, value FROM settings');
+      const [rows] = await pool.query('SELECT \\`key\\`, value FROM settings');
       const settings = {};
       rows.forEach(r => {
         settings[r.key] = r.value;
@@ -199,11 +199,11 @@ class AdminController {
       try {
         await connection.beginTransaction();
         for (const [key, value] of Object.entries(settings)) {
-          await connection.query(\`
-            INSERT INTO settings (\\\`key\\\`, value, updated_at) 
+          await connection.query(`
+            INSERT INTO settings (\\`key\\`, value, updated_at) 
             VALUES (?, ?, CURRENT_TIMESTAMP)
             ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = CURRENT_TIMESTAMP
-          \`, [key, String(value)]);
+          `, [key, String(value)]);
         }
         await connection.commit();
       } catch (err) {

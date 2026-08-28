@@ -14,22 +14,22 @@ class PaymentController {
       }
 
       // Generate unique local transaction
-      const [transResult] = await pool.query(\`
+      const [transResult] = await pool.query(`
         INSERT INTO transactions (user_id, type, amount, status, gateway, details)
         VALUES (?, 'deposit', ?, 'pending', 'cryptomus', ?)
-      \`, [userId, numAmount, \`Cryptomus deposit initiated for user #\${userId}\`]);
+      `, [userId, numAmount, `Cryptomus deposit initiated for user #\${userId}`]);
 
       const transId = transResult.insertId;
-      const baseUrl = \`\${req.protocol}://\${req.get('host')}\`;
+      const baseUrl = `\${req.protocol}://\${req.get('host')}`;
 
       let invoice;
       try {
         invoice = await cryptomusService.createInvoice({
-          orderId: \`DEP_\${transId}\`,
+          orderId: `DEP_\${transId}`,
           amount: numAmount,
           currency: 'USD',
-          urlCallback: \`\${baseUrl}/api/payment/cryptomus/webhook\`,
-          urlReturn: \`\${baseUrl}/?payment=success\`
+          urlCallback: `\${baseUrl}/api/payment/cryptomus/webhook`,
+          urlReturn: `\${baseUrl}/?payment=success`
         });
       } catch (err) {
         await pool.query("UPDATE transactions SET status = 'failed' WHERE id = ?", [transId]);
@@ -91,7 +91,7 @@ class PaymentController {
           await connection.beginTransaction();
           await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [creditAmount, transaction.user_id]);
           await connection.query("UPDATE transactions SET status = 'completed', details = ? WHERE id = ?", 
-            [\`Cryptomus payment verified: status=\${status}, amount=\${creditAmount}\`, transId]);
+            [`Cryptomus payment verified: status=\${status}, amount=\${creditAmount}`, transId]);
           await connection.commit();
         } catch (err) {
           await connection.rollback();
@@ -100,7 +100,7 @@ class PaymentController {
           connection.release();
         }
 
-        console.log(\`✅ Cryptomus deposit completed: User #\${transaction.user_id} credited +\${creditAmount}\`);
+        console.log(`✅ Cryptomus deposit completed: User #\${transaction.user_id} credited +\${creditAmount}`);
       } else if (status === 'cancel' || status === 'fail') {
         await pool.query("UPDATE transactions SET status = 'failed' WHERE id = ?", [transId]);
       }
@@ -122,20 +122,20 @@ class PaymentController {
         return res.status(400).json({ error: 'Valid deposit amount is required' });
       }
 
-      const [transResult] = await pool.query(\`
+      const [transResult] = await pool.query(`
         INSERT INTO transactions (user_id, type, amount, status, gateway, details)
         VALUES (?, 'deposit', ?, 'pending', 'binance', ?)
-      \`, [userId, numAmount, \`Binance Pay deposit for user #\${userId}\`]);
+      `, [userId, numAmount, `Binance Pay deposit for user #\${userId}`]);
 
       const transId = transResult.insertId;
 
       let binanceOrder;
       try {
         binanceOrder = await binancePayService.createOrder({
-          tradeNo: \`BN_\${transId}_\${Date.now()}\`,
+          tradeNo: `BN_\${transId}_\${Date.now()}`,
           amount: numAmount,
           currency: 'USDT',
-          description: \`Deposit #\${transId}\`
+          description: `Deposit #\${transId}`
         });
       } catch (err) {
         await pool.query("UPDATE transactions SET status = 'failed' WHERE id = ?", [transId]);
@@ -187,7 +187,7 @@ class PaymentController {
               await connection.beginTransaction();
               await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [amount, transaction.user_id]);
               await connection.query("UPDATE transactions SET status = 'completed', details = ? WHERE id = ?",
-                [\`Binance Pay payment success: \${tradeNo}\`, transId]);
+                [`Binance Pay payment success: \${tradeNo}`, transId]);
               await connection.commit();
             } catch (err) {
               await connection.rollback();
@@ -209,12 +209,12 @@ class PaymentController {
   async getUserTransactions(req, res) {
     try {
       const userId = req.user.id;
-      const [transactions] = await pool.query(\`
+      const [transactions] = await pool.query(`
         SELECT * FROM transactions
         WHERE user_id = ?
         ORDER BY id DESC
         LIMIT 50
-      \`, [userId]);
+      `, [userId]);
 
       res.json({ transactions });
     } catch (error) {

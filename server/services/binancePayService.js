@@ -1,15 +1,15 @@
 const axios = require('axios');
 const crypto = require('crypto');
-const db = require('../config/database');
+const pool = require('../config/database');
 
 class BinancePayService {
-  getCredentials() {
-    const keyRow = db.prepare(`SELECT value FROM settings WHERE key = 'binance_api_key'`).get();
-    const secretRow = db.prepare(`SELECT value FROM settings WHERE key = 'binance_secret_key'`).get();
+  async getCredentials() {
+    const [keyRows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'binance_api_key'\`);
+    const [secretRows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'binance_secret_key'\`);
 
     return {
-      apiKey: keyRow?.value || process.env.BINANCE_PAY_API_KEY || '',
-      secretKey: secretRow?.value || process.env.BINANCE_PAY_SECRET_KEY || ''
+      apiKey: keyRows[0]?.value || process.env.BINANCE_PAY_API_KEY || '',
+      secretKey: secretRows[0]?.value || process.env.BINANCE_PAY_SECRET_KEY || ''
     };
   }
 
@@ -23,12 +23,12 @@ class BinancePayService {
   }
 
   generateSignature(timestamp, nonce, bodyStr, secretKey) {
-    const payload = `${timestamp}\n${nonce}\n${bodyStr}\n`;
+    const payload = \`\${timestamp}\\n\${nonce}\\n\${bodyStr}\\n\`;
     return crypto.createHmac('sha512', secretKey).update(payload).digest('hex').toUpperCase();
   }
 
   async createOrder({ tradeNo, amount, currency = 'USDT', description = 'Wallet Topup' }) {
-    const { apiKey, secretKey } = this.getCredentials();
+    const { apiKey, secretKey } = await this.getCredentials();
 
     if (!apiKey || !secretKey) {
       throw new Error('Binance Pay API keys are not configured in Admin settings');
@@ -79,8 +79,8 @@ class BinancePayService {
     }
   }
 
-  verifyWebhook(timestamp, nonce, bodyStr, signature) {
-    const { secretKey } = this.getCredentials();
+  async verifyWebhook(timestamp, nonce, bodyStr, signature) {
+    const { secretKey } = await this.getCredentials();
     if (!secretKey) return false;
 
     const calculatedSig = this.generateSignature(timestamp, nonce, bodyStr, secretKey);

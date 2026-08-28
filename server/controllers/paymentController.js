@@ -1,6 +1,6 @@
 const cryptomusService = require('../services/cryptomusService');
 const binancePayService = require('../services/binancePayService');
-const db = require('../config/database');
+const pool = require('../config/database');
 
 class PaymentController {
   async createCryptomus(req, res) {
@@ -14,29 +14,29 @@ class PaymentController {
       }
 
       // Generate unique local transaction
-      const transResult = db.prepare(`
+      const [transResult] = await pool.query(\`
         INSERT INTO transactions (user_id, type, amount, status, gateway, details)
         VALUES (?, 'deposit', ?, 'pending', 'cryptomus', ?)
-      `).run(userId, numAmount, `Cryptomus deposit initiated for user #${userId}`);
+      \`, [userId, numAmount, \`Cryptomus deposit initiated for user #\${userId}\`]);
 
-      const transId = transResult.lastInsertRowid;
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
+      const transId = transResult.insertId;
+      const baseUrl = \`\${req.protocol}://\${req.get('host')}\`;
 
       let invoice;
       try {
         invoice = await cryptomusService.createInvoice({
-          orderId: `DEP_${transId}`,
+          orderId: \`DEP_\${transId}\`,
           amount: numAmount,
           currency: 'USD',
-          urlCallback: `${baseUrl}/api/payment/cryptomus/webhook`,
-          urlReturn: `${baseUrl}/?payment=success`
+          urlCallback: \`\${baseUrl}/api/payment/cryptomus/webhook\`,
+          urlReturn: \`\${baseUrl}/?payment=success\`
         });
       } catch (err) {
-        db.prepare("UPDATE transactions SET status = 'failed' WHERE id = ?").run(transId);
+        await pool.query("UPDATE transactions SET status = 'failed' WHERE id = ?", [transId]);
         return res.status(400).json({ error: err.message || 'Failed to generate Cryptomus invoice' });
       }
 
-      db.prepare("UPDATE transactions SET payment_id = ? WHERE id = ?").run(invoice.uuid || invoice.order_id, transId);
+      await pool.query("UPDATE transactions SET payment_id = ? WHERE id = ?", [invoice.uuid || invoice.order_id, transId]);
 
       res.json({
         message: 'Invoice created successfully',
@@ -58,7 +58,7 @@ class PaymentController {
         return res.status(400).send('Invalid signature or payload');
       }
 
-      const isValid = cryptomusService.verifyWebhook(payload, sign);
+      const isValid = await cryptomusService.verifyWebhook(payload, sign);
       if (!isValid) {
         console.warn('Invalid Cryptomus webhook signature received');
         return res.status(400).send('Signature mismatch');
@@ -72,11 +72,12 @@ class PaymentController {
       }
 
       const transId = parseInt(order_id.replace('DEP_', ''));
-      const transaction = db.prepare('SELECT * FROM transactions WHERE id = ?').get(transId);
+      const [transactions] = await pool.query('SELECT * FROM transactions WHERE id = ?', [transId]);
 
-      if (!transaction) {
+      if (transactions.length === 0) {
         return res.status(404).send('Transaction not found');
       }
+      const transaction = transactions[0];
 
       if (transaction.status === 'completed') {
         return res.status(200).send('Already processed');
@@ -85,15 +86,23 @@ class PaymentController {
       if (status === 'paid' || status === 'paid_over') {
         const creditAmount = parseFloat(merchant_amount || transaction.amount);
 
-        db.transaction(() => {
-          db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(creditAmount, transaction.user_id);
-          db.prepare("UPDATE transactions SET status = 'completed', details = ? WHERE id = ?")
-            .run(`Cryptomus payment verified: status=${status}, amount=${creditAmount}`, transId);
-        })();
+        const connection = await pool.getConnection();
+        try {
+          await connection.beginTransaction();
+          await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [creditAmount, transaction.user_id]);
+          await connection.query("UPDATE transactions SET status = 'completed', details = ? WHERE id = ?", 
+            [\`Cryptomus payment verified: status=\${status}, amount=\${creditAmount}\`, transId]);
+          await connection.commit();
+        } catch (err) {
+          await connection.rollback();
+          throw err;
+        } finally {
+          connection.release();
+        }
 
-        console.log(`✅ Cryptomus deposit completed: User #${transaction.user_id} credited +${creditAmount}`);
+        console.log(\`✅ Cryptomus deposit completed: User #\${transaction.user_id} credited +\${creditAmount}\`);
       } else if (status === 'cancel' || status === 'fail') {
-        db.prepare("UPDATE transactions SET status = 'failed' WHERE id = ?").run(transId);
+        await pool.query("UPDATE transactions SET status = 'failed' WHERE id = ?", [transId]);
       }
 
       res.status(200).send('OK');
@@ -113,28 +122,28 @@ class PaymentController {
         return res.status(400).json({ error: 'Valid deposit amount is required' });
       }
 
-      const transResult = db.prepare(`
+      const [transResult] = await pool.query(\`
         INSERT INTO transactions (user_id, type, amount, status, gateway, details)
         VALUES (?, 'deposit', ?, 'pending', 'binance', ?)
-      `).run(userId, numAmount, `Binance Pay deposit for user #${userId}`);
+      \`, [userId, numAmount, \`Binance Pay deposit for user #\${userId}\`]);
 
-      const transId = transResult.lastInsertRowid;
+      const transId = transResult.insertId;
 
       let binanceOrder;
       try {
         binanceOrder = await binancePayService.createOrder({
-          tradeNo: `BN_${transId}_${Date.now()}`,
+          tradeNo: \`BN_\${transId}_\${Date.now()}\`,
           amount: numAmount,
           currency: 'USDT',
-          description: `Deposit #${transId}`
+          description: \`Deposit #\${transId}\`
         });
       } catch (err) {
-        db.prepare("UPDATE transactions SET status = 'failed' WHERE id = ?").run(transId);
+        await pool.query("UPDATE transactions SET status = 'failed' WHERE id = ?", [transId]);
         return res.status(400).json({ error: err.message || 'Failed to initiate Binance Pay' });
       }
 
-      db.prepare("UPDATE transactions SET payment_id = ? WHERE id = ?")
-        .run(binanceOrder.prepayId || binanceOrder.checkoutUrl, transId);
+      await pool.query("UPDATE transactions SET payment_id = ? WHERE id = ?", 
+        [binanceOrder.prepayId || binanceOrder.checkoutUrl, transId]);
 
       res.json({
         message: 'Binance Pay order created',
@@ -155,7 +164,7 @@ class PaymentController {
       const signature = req.headers['binancepay-signature'];
       const rawBody = JSON.stringify(req.body);
 
-      const isValid = binancePayService.verifyWebhook(timestamp, nonce, rawBody, signature);
+      const isValid = await binancePayService.verifyWebhook(timestamp, nonce, rawBody, signature);
       if (!isValid) {
         return res.status(400).json({ returnCode: 'FAIL', returnMessage: 'Invalid signature' });
       }
@@ -167,14 +176,25 @@ class PaymentController {
           const parts = tradeNo.split('_');
           const transId = parseInt(parts[1]);
 
-          const transaction = db.prepare('SELECT * FROM transactions WHERE id = ?').get(transId);
+          const [transactions] = await pool.query('SELECT * FROM transactions WHERE id = ?', [transId]);
+          const transaction = transactions.length > 0 ? transactions[0] : null;
+
           if (transaction && transaction.status !== 'completed') {
             const amount = parseFloat(data.orderAmount || transaction.amount);
-            db.transaction(() => {
-              db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(amount, transaction.user_id);
-              db.prepare("UPDATE transactions SET status = 'completed', details = ? WHERE id = ?")
-                .run(`Binance Pay payment success: ${tradeNo}`, transId);
-            })();
+            
+            const connection = await pool.getConnection();
+            try {
+              await connection.beginTransaction();
+              await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [amount, transaction.user_id]);
+              await connection.query("UPDATE transactions SET status = 'completed', details = ? WHERE id = ?",
+                [\`Binance Pay payment success: \${tradeNo}\`, transId]);
+              await connection.commit();
+            } catch (err) {
+              await connection.rollback();
+              throw err;
+            } finally {
+              connection.release();
+            }
           }
         }
       }
@@ -186,15 +206,15 @@ class PaymentController {
     }
   }
 
-  getUserTransactions(req, res) {
+  async getUserTransactions(req, res) {
     try {
       const userId = req.user.id;
-      const transactions = db.prepare(`
+      const [transactions] = await pool.query(\`
         SELECT * FROM transactions
         WHERE user_id = ?
         ORDER BY id DESC
         LIMIT 50
-      `).all(userId);
+      \`, [userId]);
 
       res.json({ transactions });
     } catch (error) {

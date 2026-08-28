@@ -1,10 +1,10 @@
 const fiveSimService = require('../services/fiveSimService');
-const db = require('../config/database');
+const pool = require('../config/database');
 
 class SimController {
-  getProfitMargin() {
-    const row = db.prepare(`SELECT value FROM settings WHERE key = 'profit_margin'`).get();
-    const margin = parseFloat(row?.value || '20');
+  async getProfitMargin() {
+    const [rows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'profit_margin'\`);
+    const margin = parseFloat(rows[0]?.value || '20');
     return isNaN(margin) ? 20 : margin;
   }
 
@@ -28,7 +28,7 @@ class SimController {
     try {
       const { country = 'any', operator = 'any' } = req.query;
       const rawProducts = await fiveSimService.getProducts(country, operator);
-      const margin = this.getProfitMargin();
+      const margin = await this.getProfitMargin();
 
       const productsWithMarkup = {};
       for (const [prodKey, prodData] of Object.entries(rawProducts)) {
@@ -51,7 +51,7 @@ class SimController {
     try {
       const { country, product } = req.query;
       const rawPrices = await fiveSimService.getPrices(country, product);
-      const margin = this.getProfitMargin();
+      const margin = await this.getProfitMargin();
 
       // 5SIM returns { product: { country: { operator: {...} } } } if we only query by product.
       // We must normalize it to { country: { product: { operator: {...} } } } so the frontend logic works.
@@ -97,13 +97,14 @@ class SimController {
         return res.status(400).json({ error: 'Country, operator and product are required' });
       }
 
-      const margin = this.getProfitMargin();
+      const margin = await this.getProfitMargin();
 
       // Fetch user profile from DB to check balance
-      const user = db.prepare('SELECT id, balance FROM users WHERE id = ?').get(userId);
-      if (!user) {
+      const [users] = await pool.query('SELECT id, balance FROM users WHERE id = ?', [userId]);
+      if (users.length === 0) {
         return res.status(404).json({ error: 'User not found' });
       }
+      const user = users[0];
 
       // Call 5sim to buy activation
       let orderData;
@@ -112,14 +113,14 @@ class SimController {
       } catch (err) {
         let msg = err.message || 'No numbers available';
         if (msg.includes('no free phones') || msg.includes('no numbers')) {
-          msg = `No numbers currently available for ${operator.toUpperCase()} in ${country.toUpperCase()}. Please choose another carrier.`;
+          msg = \`No numbers currently available for \${operator.toUpperCase()} in \${country.toUpperCase()}. Please choose another carrier.\`;
         }
         return res.status(400).json({ error: msg });
       }
 
       if (!orderData || !orderData.phone || !orderData.id) {
         return res.status(400).json({ 
-          error: `No number available for ${operator.toUpperCase()}. Please try another operator with available stock.` 
+          error: \`No number available for \${operator.toUpperCase()}. Please try another operator with available stock.\` 
         });
       }
 
@@ -134,24 +135,28 @@ class SimController {
           console.error('Auto-cancel failed on low balance:', e);
         }
         return res.status(400).json({
-          error: `Insufficient balance. Required: ${priceUser}, Current: ${user.balance}`
+          error: \`Insufficient balance. Required: \${priceUser}, Current: \${user.balance}\`
         });
       }
 
       // Deduct balance and create order in a transaction
-      const buyTransaction = db.transaction(() => {
+      const connection = await pool.getConnection();
+      let createdOrder;
+      let newBalance;
+
+      try {
+        await connection.beginTransaction();
+
         // Deduct user balance
-        db.prepare('UPDATE users SET balance = balance - ? WHERE id = ?').run(priceUser, userId);
+        await connection.query('UPDATE users SET balance = balance - ? WHERE id = ?', [priceUser, userId]);
 
         // Insert order record
-        const insertOrder = db.prepare(`
+        const [orderResult] = await connection.query(\`
           INSERT INTO orders (
             user_id, fivesim_order_id, phone, country, product, operator,
             cost_fivesim, price_user, status, expires_at
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `);
-
-        const orderResult = insertOrder.run(
+        \`, [
           userId,
           orderData.id,
           orderData.phone,
@@ -161,28 +166,36 @@ class SimController {
           costFiveSim,
           priceUser,
           orderData.status || 'PENDING',
-          orderData.expires
-        );
+          orderData.expires ? new Date(orderData.expires).toISOString().slice(0, 19).replace('T', ' ') : null // Basic MySQL datetime conversion
+        ]);
+
+        const dbOrderId = orderResult.insertId;
 
         // Insert transaction record
-        db.prepare(`
+        await connection.query(\`
           INSERT INTO transactions (user_id, type, amount, status, gateway, payment_id, details)
           VALUES (?, 'purchase', ?, 'completed', 'internal', ?, ?)
-        `).run(
+        \`, [
           userId,
           priceUser,
           orderData.id.toString(),
-          `Purchased ${product.toUpperCase()} number (${orderData.phone}) in ${country.toUpperCase()}`
-        );
+          \`Purchased \${product.toUpperCase()} number (\${orderData.phone}) in \${country.toUpperCase()}\`
+        ]);
 
-        return orderResult.lastInsertRowid;
-      });
+        await connection.commit();
 
-      const dbOrderId = buyTransaction();
-      const createdOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(dbOrderId);
+        const [orders] = await pool.query('SELECT * FROM orders WHERE id = ?', [dbOrderId]);
+        createdOrder = orders[0];
 
-      // Get updated balance
-      const updatedUser = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
+        const [updatedUsers] = await pool.query('SELECT balance FROM users WHERE id = ?', [userId]);
+        newBalance = updatedUsers[0].balance;
+
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
 
       res.status(201).json({
         message: 'Number purchased successfully',
@@ -190,7 +203,7 @@ class SimController {
           ...createdOrder,
           sms: orderData.sms || []
         },
-        new_balance: updatedUser.balance
+        new_balance: parseFloat(newBalance)
       });
     } catch (error) {
       console.error('Buy error:', error);
@@ -203,10 +216,11 @@ class SimController {
       const orderId = req.params.id;
       const userId = req.user.id;
 
-      const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(orderId, userId);
-      if (!order) {
+      const [orders] = await pool.query('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, userId]);
+      if (orders.length === 0) {
         return res.status(404).json({ error: 'Order not found' });
       }
+      const order = orders[0];
 
       // Check with 5SIM API
       let remoteOrder;
@@ -235,38 +249,47 @@ class SimController {
 
       // Handle Timeout / Cancellation from 5SIM side with automatic refund
       const isAlreadyFinal = ['CANCELED', 'TIMEOUT', 'BANNED', 'FINISHED'].includes(order.status);
-      if ((newStatus === 'TIMEOUT' || newStatus === 'CANCELED') && !isAlreadyFinal && !order.sms_code) {
-        db.transaction(() => {
-          db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(order.price_user, userId);
-          db.prepare(`
+      
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+
+        if ((newStatus === 'TIMEOUT' || newStatus === 'CANCELED') && !isAlreadyFinal && !order.sms_code) {
+          await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [order.price_user, userId]);
+          await connection.query(\`
             INSERT INTO transactions (user_id, type, amount, status, gateway, payment_id, details)
             VALUES (?, 'refund', ?, 'completed', 'internal', ?, ?)
-          `).run(
+          \`, [
             userId,
             order.price_user,
             order.fivesim_order_id.toString(),
-            `Auto Refund for expired/cancelled order #${order.id} (${order.product})`
-          );
-          db.prepare('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
-            .run(newStatus, order.id);
-        })();
-      } else {
-        db.prepare(`
-          UPDATE orders 
-          SET status = ?, sms_code = ?, sms_text = ?, updated_at = CURRENT_TIMESTAMP
-          WHERE id = ?
-        `).run(newStatus, smsCode, smsText, order.id);
+            \`Auto Refund for expired/cancelled order #\${order.id} (\${order.product})\`
+          ]);
+          await connection.query('UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', [newStatus, order.id]);
+        } else {
+          await connection.query(\`
+            UPDATE orders 
+            SET status = ?, sms_code = ?, sms_text = ?, updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          \`, [newStatus, smsCode, smsText, order.id]);
+        }
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
       }
 
-      const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
-      const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
+      const [updatedOrders] = await pool.query('SELECT * FROM orders WHERE id = ?', [order.id]);
+      const [users] = await pool.query('SELECT balance FROM users WHERE id = ?', [userId]);
 
       res.json({
         order: {
-          ...updatedOrder,
+          ...updatedOrders[0],
           sms: remoteOrder.sms || []
         },
-        balance: user.balance
+        balance: parseFloat(users[0].balance)
       });
     } catch (error) {
       console.error('checkOrder error:', error);
@@ -277,11 +300,11 @@ class SimController {
   async getActiveOrders(req, res) {
     try {
       const userId = req.user.id;
-      const orders = db.prepare(`
+      const [orders] = await pool.query(\`
         SELECT * FROM orders 
         WHERE user_id = ? AND status IN ('PENDING', 'RECEIVED')
         ORDER BY id DESC
-      `).all(userId);
+      \`, [userId]);
 
       res.json({ orders });
     } catch (error) {
@@ -296,14 +319,15 @@ class SimController {
       const page = parseInt(req.query.page) || 1;
       const offset = (page - 1) * limit;
 
-      const orders = db.prepare(`
+      const [orders] = await pool.query(\`
         SELECT * FROM orders 
         WHERE user_id = ?
         ORDER BY id DESC
         LIMIT ? OFFSET ?
-      `).all(userId, limit, offset);
+      \`, [userId, limit, offset]);
 
-      const totalCount = db.prepare('SELECT COUNT(*) as count FROM orders WHERE user_id = ?').get(userId).count;
+      const [counts] = await pool.query('SELECT COUNT(*) as count FROM orders WHERE user_id = ?', [userId]);
+      const totalCount = counts[0].count;
 
       res.json({ orders, total: totalCount, page, limit });
     } catch (error) {
@@ -316,13 +340,14 @@ class SimController {
       const orderId = req.params.id;
       const userId = req.user.id;
 
-      const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(orderId, userId);
-      if (!order) {
+      const [orders] = await pool.query('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, userId]);
+      if (orders.length === 0) {
         return res.status(404).json({ error: 'Order not found' });
       }
+      const order = orders[0];
 
       if (order.status === 'CANCELED' || order.status === 'TIMEOUT' || order.status === 'FINISHED' || order.status === 'BANNED') {
-        return res.status(400).json({ error: `Order is already ${order.status}` });
+        return res.status(400).json({ error: \`Order is already \${order.status}\` });
       }
 
       if (order.sms_code) {
@@ -337,26 +362,34 @@ class SimController {
       }
 
       // Refund user and update order
-      db.transaction(() => {
-        db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(order.price_user, userId);
-        db.prepare(`
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [order.price_user, userId]);
+        await connection.query(\`
           INSERT INTO transactions (user_id, type, amount, status, gateway, payment_id, details)
           VALUES (?, 'refund', ?, 'completed', 'internal', ?, ?)
-        `).run(
+        \`, [
           userId,
           order.price_user,
           order.fivesim_order_id.toString(),
-          `Refund for cancelled order #${order.id} (${order.product})`
-        );
-        db.prepare("UPDATE orders SET status = 'CANCELED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
-      })();
+          \`Refund for cancelled order #\${order.id} (\${order.product})\`
+        ]);
+        await connection.query("UPDATE orders SET status = 'CANCELED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [order.id]);
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
 
-      const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
+      const [users] = await pool.query('SELECT balance FROM users WHERE id = ?', [userId]);
 
       res.json({
         message: 'Order cancelled successfully and balance refunded',
         order_status: 'CANCELED',
-        new_balance: user.balance
+        new_balance: parseFloat(users[0].balance)
       });
     } catch (error) {
       console.error('cancelOrder error:', error);
@@ -369,10 +402,11 @@ class SimController {
       const orderId = req.params.id;
       const userId = req.user.id;
 
-      const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(orderId, userId);
-      if (!order) {
+      const [orders] = await pool.query('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, userId]);
+      if (orders.length === 0) {
         return res.status(404).json({ error: 'Order not found' });
       }
+      const order = orders[0];
 
       try {
         await fiveSimService.finishOrder(order.fivesim_order_id);
@@ -380,7 +414,7 @@ class SimController {
         console.warn('5sim finish warning:', err.message);
       }
 
-      db.prepare("UPDATE orders SET status = 'FINISHED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
+      await pool.query("UPDATE orders SET status = 'FINISHED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [order.id]);
 
       res.json({ message: 'Order finished successfully', order_status: 'FINISHED' });
     } catch (error) {
@@ -393,13 +427,14 @@ class SimController {
       const orderId = req.params.id;
       const userId = req.user.id;
 
-      const order = db.prepare('SELECT * FROM orders WHERE id = ? AND user_id = ?').get(orderId, userId);
-      if (!order) {
+      const [orders] = await pool.query('SELECT * FROM orders WHERE id = ? AND user_id = ?', [orderId, userId]);
+      if (orders.length === 0) {
         return res.status(404).json({ error: 'Order not found' });
       }
+      const order = orders[0];
 
       if (order.status === 'BANNED' || order.status === 'CANCELED' || order.status === 'TIMEOUT') {
-        return res.status(400).json({ error: `Order is already ${order.status}` });
+        return res.status(400).json({ error: \`Order is already \${order.status}\` });
       }
 
       try {
@@ -409,23 +444,31 @@ class SimController {
       }
 
       // Refund on ban
-      db.transaction(() => {
-        db.prepare('UPDATE users SET balance = balance + ? WHERE id = ?').run(order.price_user, userId);
-        db.prepare(`
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        await connection.query('UPDATE users SET balance = balance + ? WHERE id = ?', [order.price_user, userId]);
+        await connection.query(\`
           INSERT INTO transactions (user_id, type, amount, status, gateway, payment_id, details)
           VALUES (?, 'refund', ?, 'completed', 'internal', ?, ?)
-        `).run(
+        \`, [
           userId,
           order.price_user,
           order.fivesim_order_id.toString(),
-          `Refund for banned/bad number order #${order.id}`
-        );
-        db.prepare("UPDATE orders SET status = 'BANNED', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(order.id);
-      })();
+          \`Refund for banned/bad number order #\${order.id}\`
+        ]);
+        await connection.query("UPDATE orders SET status = 'BANNED', updated_at = CURRENT_TIMESTAMP WHERE id = ?", [order.id]);
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
 
-      const user = db.prepare('SELECT balance FROM users WHERE id = ?').get(userId);
+      const [users] = await pool.query('SELECT balance FROM users WHERE id = ?', [userId]);
 
-      res.json({ message: 'Number banned and balance refunded', new_balance: user.balance });
+      res.json({ message: 'Number banned and balance refunded', new_balance: parseFloat(users[0].balance) });
     } catch (error) {
       res.status(500).json({ error: 'Failed to ban order' });
     }
@@ -433,4 +476,3 @@ class SimController {
 }
 
 module.exports = new SimController();
-

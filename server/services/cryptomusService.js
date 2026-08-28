@@ -1,15 +1,15 @@
 const axios = require('axios');
 const crypto = require('crypto');
-const db = require('../config/database');
+const pool = require('../config/database');
 
 class CryptomusService {
-  getCredentials() {
-    const merchantRow = db.prepare(`SELECT value FROM settings WHERE key = 'cryptomus_merchant_id'`).get();
-    const keyRow = db.prepare(`SELECT value FROM settings WHERE key = 'cryptomus_api_key'`).get();
+  async getCredentials() {
+    const [merchantRows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'cryptomus_merchant_id'\`);
+    const [keyRows] = await pool.query(\`SELECT value FROM settings WHERE \\\`key\\\` = 'cryptomus_api_key'\`);
 
     return {
-      merchantId: merchantRow?.value || process.env.CRYPTOMUS_MERCHANT_ID || '',
-      apiKey: keyRow?.value || process.env.CRYPTOMUS_API_KEY || ''
+      merchantId: merchantRows[0]?.value || process.env.CRYPTOMUS_MERCHANT_ID || '',
+      apiKey: keyRows[0]?.value || process.env.CRYPTOMUS_API_KEY || ''
     };
   }
 
@@ -20,7 +20,7 @@ class CryptomusService {
   }
 
   async createInvoice({ orderId, amount, currency = 'USD', urlCallback, urlReturn }) {
-    const { merchantId, apiKey } = this.getCredentials();
+    const { merchantId, apiKey } = await this.getCredentials();
 
     if (!merchantId || !apiKey) {
       throw new Error('Cryptomus credentials are not configured in Admin settings');
@@ -58,8 +58,8 @@ class CryptomusService {
     }
   }
 
-  verifyWebhook(payload, signature) {
-    const { apiKey } = this.getCredentials();
+  async verifyWebhook(payload, signature) {
+    const { apiKey } = await this.getCredentials();
     if (!apiKey) return false;
 
     // Cryptomus calculates hash: md5(base64(raw_body) + apiKey)

@@ -1,10 +1,10 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const db = require('../config/database');
+const pool = require('../config/database');
 const { JWT_SECRET } = require('../middleware/auth');
 
 class AuthController {
-  register(req, res) {
+  async register(req, res) {
     try {
       const { email, password } = req.body;
 
@@ -17,8 +17,8 @@ class AuthController {
       }
 
       // Check existing email
-      const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase());
-      if (existing) {
+      const [existing] = await pool.query('SELECT id FROM users WHERE email = ?', [email.toLowerCase()]);
+      if (existing.length > 0) {
         return res.status(400).json({ error: 'Email is already registered' });
       }
 
@@ -26,13 +26,13 @@ class AuthController {
       const hash = bcrypt.hashSync(password, salt);
       const newAccountId = Math.floor(1000000 + Math.random() * 9000000).toString();
 
-      const result = db.prepare(`
+      const [result] = await pool.query(`
         INSERT INTO users (account_id, email, password_hash, role, balance)
-        VALUES (?, ?, ?, 'user', 0.0)
-      `).run(newAccountId, email.toLowerCase(), hash);
+        VALUES (?, ?, ?, 'user', 0.00)
+      `, [newAccountId, email.toLowerCase(), hash]);
 
       const token = jwt.sign(
-        { id: result.lastInsertRowid, email: email.toLowerCase(), role: 'user' },
+        { id: result.insertId, email: email.toLowerCase(), role: 'user' },
         JWT_SECRET,
         { expiresIn: '30d' }
       );
@@ -41,7 +41,7 @@ class AuthController {
         message: 'Registration successful',
         token,
         user: {
-          id: result.lastInsertRowid,
+          id: result.insertId,
           email: email.toLowerCase(),
           role: 'user',
           balance: 0.0
@@ -53,7 +53,7 @@ class AuthController {
     }
   }
 
-  login(req, res) {
+  async login(req, res) {
     try {
       const { email, password } = req.body;
 
@@ -61,10 +61,11 @@ class AuthController {
         return res.status(400).json({ error: 'Email and password are required' });
       }
 
-      const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email.toLowerCase());
-      if (!user) {
+      const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [email.toLowerCase()]);
+      if (users.length === 0) {
         return res.status(401).json({ error: 'Invalid email or password' });
       }
+      const user = users[0];
 
       const isMatch = bcrypt.compareSync(password, user.password_hash);
       if (!isMatch) {
@@ -85,7 +86,7 @@ class AuthController {
           account_id: user.account_id,
           email: user.email,
           role: user.role,
-          balance: user.balance
+          balance: parseFloat(user.balance)
         }
       });
     } catch (error) {
@@ -94,26 +95,30 @@ class AuthController {
     }
   }
 
-  getProfile(req, res) {
+  async getProfile(req, res) {
     try {
-      const user = db.prepare('SELECT id, account_id, email, role, balance, created_at FROM users WHERE id = ?').get(req.user.id);
-      if (!user) {
+      const [users] = await pool.query('SELECT id, account_id, email, role, balance, created_at FROM users WHERE id = ?', [req.user.id]);
+      if (users.length === 0) {
         return res.status(404).json({ error: 'User not found' });
       }
+      const user = users[0];
+      user.balance = parseFloat(user.balance);
       res.json({ user });
     } catch (error) {
       res.status(500).json({ error: 'Failed to fetch profile' });
     }
   }
 
-  updatePassword(req, res) {
+  async updatePassword(req, res) {
     try {
       const { oldPassword, newPassword } = req.body;
       if (!oldPassword || !newPassword || newPassword.length < 6) {
         return res.status(400).json({ error: 'Valid old and new password (min 6 chars) required' });
       }
 
-      const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+      const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [req.user.id]);
+      const user = users[0];
+      
       const isMatch = bcrypt.compareSync(oldPassword, user.password_hash);
       if (!isMatch) {
         return res.status(400).json({ error: 'Incorrect current password' });
@@ -122,31 +127,30 @@ class AuthController {
       const salt = bcrypt.genSaltSync(10);
       const hash = bcrypt.hashSync(newPassword, salt);
 
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+      await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [hash, user.id]);
       res.json({ message: 'Password updated successfully' });
     } catch (error) {
       res.status(500).json({ error: 'Failed to update password' });
     }
   }
 
-  setPassword(req, res) {
+  async setPassword(req, res) {
     try {
       const { newPassword } = req.body;
       if (!newPassword || newPassword.length < 6) {
         return res.status(400).json({ error: 'Password must be at least 6 characters' });
       }
 
-      // We allow setting a password without old password if they don't know it (e.g. Google auth)
-      // This is safe because this endpoint is protected by authMiddleware (they are already logged in via Google)
-      const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.user.id);
-      if (!user) {
+      const [users] = await pool.query('SELECT id FROM users WHERE id = ?', [req.user.id]);
+      if (users.length === 0) {
         return res.status(404).json({ error: 'User not found' });
       }
+      const user = users[0];
 
       const salt = bcrypt.genSaltSync(10);
       const hash = bcrypt.hashSync(newPassword, salt);
 
-      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
+      await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [hash, user.id]);
       res.json({ message: 'Password set successfully. You can now login with this password.' });
     } catch (error) {
       console.error('Set password error:', error);
@@ -154,34 +158,38 @@ class AuthController {
     }
   }
 
-  getTradeHistory(req, res) {
+  async getTradeHistory(req, res) {
     try {
       // Get all deposits for this user
-      const deposits = db.prepare(`
+      const [depositRows] = await pool.query(`
         SELECT id, amount as price, type, gateway, status, created_at
         FROM transactions
         WHERE user_id = ? AND type = 'deposit'
         ORDER BY created_at DESC
-      `).all(req.user.id).map(t => ({
+      `, [req.user.id]);
+      
+      const deposits = depositRows.map(t => ({
         id: 'T-' + t.id,
         type: 'deposit',
-        description: `Deposit via ${t.gateway}`,
-        amount: '+' + t.price.toFixed(2),
+        description: \`Deposit via \${t.gateway}\`,
+        amount: '+' + parseFloat(t.price).toFixed(2),
         status: t.status,
         date: t.created_at
       }));
 
       // Get all orders for this user
-      const orders = db.prepare(`
+      const [orderRows] = await pool.query(`
         SELECT id, product, country, price_user, status, created_at
         FROM orders
         WHERE user_id = ?
         ORDER BY created_at DESC
-      `).all(req.user.id).map(o => ({
+      `, [req.user.id]);
+      
+      const orders = orderRows.map(o => ({
         id: 'O-' + o.id,
         type: 'order',
-        description: `Ordered ${o.product.toUpperCase()} (${o.country.toUpperCase()})`,
-        amount: '-' + o.price_user.toFixed(2),
+        description: \`Ordered \${o.product.toUpperCase()} (\${o.country.toUpperCase()})\`,
+        amount: '-' + parseFloat(o.price_user).toFixed(2),
         status: o.status,
         date: o.created_at
       }));
@@ -204,8 +212,8 @@ class AuthController {
       }
 
       const cleanEmail = email.toLowerCase().trim();
-      const user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(cleanEmail);
-      if (!user) {
+      const [users] = await pool.query('SELECT id, email FROM users WHERE email = ?', [cleanEmail]);
+      if (users.length === 0) {
         return res.status(404).json({ error: 'No account found with this email address' });
       }
 
@@ -213,13 +221,13 @@ class AuthController {
       const code = Math.floor(100000 + Math.random() * 900000).toString();
 
       // Expire old codes and insert new one (valid for 15 mins)
-      db.prepare(`UPDATE password_resets SET used = 1 WHERE email = ?`).run(cleanEmail);
-      db.prepare(`
+      await pool.query(\`UPDATE password_resets SET used = 1 WHERE email = ?\`, [cleanEmail]);
+      await pool.query(\`
         INSERT INTO password_resets (email, code, expires_at, used)
-        VALUES (?, ?, datetime('now', '+15 minutes'), 0)
-      `).run(cleanEmail, code);
+        VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 15 MINUTE), 0)
+      \`, [cleanEmail, code]);
 
-      console.log(`🔑 [PASSWORD RESET] Email: ${cleanEmail} | OTP Code: ${code}`);
+      console.log(\`🔑 [PASSWORD RESET] Email: \${cleanEmail} | OTP Code: \${code}\`);
 
       // Send the email using Nodemailer
       if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
@@ -235,17 +243,17 @@ class AuthController {
         });
 
         await transporter.sendMail({
-          from: `"5SIM Reseller" <${process.env.SMTP_USER}>`,
+          from: \`"5SIM Reseller" <\${process.env.SMTP_USER}>\`,
           to: cleanEmail,
           subject: "Password Reset Verification Code",
-          html: `<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+          html: \`<div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
                   <h2 style="color: #1e293b; text-align: center;">Password Reset Request</h2>
                   <p style="color: #475569; font-size: 16px;">We received a request to reset your password. Here is your 6-digit verification code:</p>
                   <div style="background-color: #f1f5f9; padding: 15px; text-align: center; border-radius: 8px; margin: 20px 0;">
-                    <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #3b82f6;">${code}</span>
+                    <span style="font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #3b82f6;">\${code}</span>
                   </div>
                   <p style="color: #475569; font-size: 14px;">This code will expire in 15 minutes. If you did not request a password reset, please ignore this email.</p>
-                </div>`
+                </div>\`
         });
       } else {
         console.warn('⚠️ SMTP settings not configured. Email was not sent.');
@@ -254,7 +262,6 @@ class AuthController {
       res.json({
         message: 'Password reset code sent to your email address successfully!',
         email: cleanEmail
-        // REMOVED: code (for security, it must be fetched from email)
       });
     } catch (error) {
       console.error('Forgot password error:', error);
@@ -262,7 +269,7 @@ class AuthController {
     }
   }
 
-  resetPassword(req, res) {
+  async resetPassword(req, res) {
     try {
       const { email, code, newPassword } = req.body;
 
@@ -277,28 +284,38 @@ class AuthController {
       const cleanEmail = email.toLowerCase().trim();
       const cleanCode = code.toString().trim();
 
-      const resetRecord = db.prepare(`
+      const [resetRecords] = await pool.query(\`
         SELECT * FROM password_resets 
-        WHERE email = ? AND code = ? AND used = 0 AND expires_at > datetime('now')
+        WHERE email = ? AND code = ? AND used = 0 AND expires_at > NOW()
         ORDER BY id DESC LIMIT 1
-      `).get(cleanEmail, cleanCode);
+      \`, [cleanEmail, cleanCode]);
 
-      if (!resetRecord) {
+      if (resetRecords.length === 0) {
         return res.status(400).json({ error: 'Invalid or expired reset code. Please request a new code.' });
       }
+      const resetRecord = resetRecords[0];
 
-      const user = db.prepare('SELECT id, email, role, balance FROM users WHERE email = ?').get(cleanEmail);
-      if (!user) {
+      const [users] = await pool.query('SELECT id, email, role, balance FROM users WHERE email = ?', [cleanEmail]);
+      if (users.length === 0) {
         return res.status(404).json({ error: 'User account not found' });
       }
+      const user = users[0];
 
       const salt = bcrypt.genSaltSync(10);
       const hash = bcrypt.hashSync(newPassword, salt);
 
-      db.transaction(() => {
-        db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, user.id);
-        db.prepare('UPDATE password_resets SET used = 1 WHERE id = ?').run(resetRecord.id);
-      })();
+      const connection = await pool.getConnection();
+      await connection.beginTransaction();
+      try {
+        await connection.query('UPDATE users SET password_hash = ? WHERE id = ?', [hash, user.id]);
+        await connection.query('UPDATE password_resets SET used = 1 WHERE id = ?', [resetRecord.id]);
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
 
       const token = jwt.sign(
         { id: user.id, email: user.email, role: user.role },
@@ -313,7 +330,7 @@ class AuthController {
           id: user.id,
           email: user.email,
           role: user.role,
-          balance: user.balance
+          balance: parseFloat(user.balance)
         }
       });
     } catch (error) {
@@ -322,7 +339,7 @@ class AuthController {
     }
   }
 
-  googleAuth(req, res) {
+  async googleAuth(req, res) {
     try {
       const { credential, email, name } = req.body;
 
@@ -348,7 +365,8 @@ class AuthController {
       }
 
       // Check if user already exists
-      let user = db.prepare('SELECT * FROM users WHERE email = ?').get(userEmail);
+      const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [userEmail]);
+      let user = users.length > 0 ? users[0] : null;
 
       if (!user) {
         // Auto-register user with random password hash
@@ -357,22 +375,22 @@ class AuthController {
         const hash = bcrypt.hashSync(randomPass, salt);
         const newAccountId = Math.floor(1000000 + Math.random() * 9000000).toString();
 
-        const result = db.prepare(`
+        const [result] = await pool.query(\`
           INSERT INTO users (account_id, email, password_hash, role, balance)
-          VALUES (?, ?, ?, 'user', 0.0)
-        `).run(newAccountId, userEmail, hash);
+          VALUES (?, ?, ?, 'user', 0.00)
+        \`, [newAccountId, userEmail, hash]);
 
         user = {
-          id: result.lastInsertRowid,
+          id: result.insertId,
           account_id: newAccountId,
           email: userEmail,
           role: 'user',
           balance: 0.0
         };
 
-        console.log(`👤 New user registered via Google: ${userEmail}`);
+        console.log(\`👤 New user registered via Google: \${userEmail}\`);
       } else {
-        console.log(`👤 User logged in via Google: ${userEmail}`);
+        console.log(\`👤 User logged in via Google: \${userEmail}\`);
       }
 
       const token = jwt.sign(
@@ -388,7 +406,7 @@ class AuthController {
           id: user.id,
           email: user.email,
           role: user.role,
-          balance: user.balance
+          balance: parseFloat(user.balance || 0)
         }
       });
     } catch (error) {

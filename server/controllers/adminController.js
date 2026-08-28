@@ -1,4 +1,4 @@
-const db = require('../config/database');
+const pool = require('../config/database');
 const fiveSimService = require('../services/fiveSimService');
 
 class AdminController {
@@ -13,35 +13,43 @@ class AdminController {
       }
 
       // Local Stats
-      const totalUsers = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
-      const totalOrders = db.prepare('SELECT COUNT(*) as count FROM orders').get().count;
-      const activeOrders = db.prepare("SELECT COUNT(*) as count FROM orders WHERE status IN ('PENDING', 'RECEIVED')").get().count;
+      const [userCountRows] = await pool.query('SELECT COUNT(*) as count FROM users');
+      const totalUsers = userCountRows[0].count;
+
+      const [orderCountRows] = await pool.query('SELECT COUNT(*) as count FROM orders');
+      const totalOrders = orderCountRows[0].count;
+
+      const [activeOrderRows] = await pool.query("SELECT COUNT(*) as count FROM orders WHERE status IN ('PENDING', 'RECEIVED')");
+      const activeOrders = activeOrderRows[0].count;
       
-      const userBalanceSum = db.prepare('SELECT SUM(balance) as sum FROM users').get().sum || 0;
+      const [balanceRows] = await pool.query('SELECT SUM(balance) as sum FROM users');
+      const userBalanceSum = balanceRows[0].sum || 0;
       
       // Calculate total profit from non-cancelled orders
-      const profitRow = db.prepare(`
+      const [profitRows] = await pool.query(\`
         SELECT 
           SUM(price_user - cost_fivesim) as total_profit,
           SUM(price_user) as total_sales,
           SUM(cost_fivesim) as total_cost
         FROM orders 
         WHERE status IN ('RECEIVED', 'FINISHED')
-      `).get();
+      \`);
+      const profitRow = profitRows[0];
 
-      const totalDeposits = db.prepare(`
+      const [depositRows] = await pool.query(\`
         SELECT SUM(amount) as sum FROM transactions 
         WHERE type = 'deposit' AND status = 'completed'
-      `).get().sum || 0;
+      \`);
+      const totalDeposits = depositRows[0].sum || 0;
 
       // Recent 10 orders
-      const recentOrders = db.prepare(`
+      const [recentOrders] = await pool.query(\`
         SELECT o.*, u.email as user_email 
         FROM orders o
         JOIN users u ON o.user_id = u.id
         ORDER BY o.id DESC
         LIMIT 10
-      `).all();
+      \`);
 
       res.json({
         master: masterProfile,
@@ -63,9 +71,9 @@ class AdminController {
     }
   }
 
-  getUsers(req, res) {
+  async getUsers(req, res) {
     try {
-      const users = db.prepare(`
+      const [users] = await pool.query(\`
         SELECT 
           u.id, u.email, u.role, u.balance, u.created_at,
           COUNT(o.id) as order_count,
@@ -74,7 +82,7 @@ class AdminController {
         LEFT JOIN orders o ON u.id = o.user_id
         GROUP BY u.id
         ORDER BY u.id DESC
-      `).all();
+      \`);
 
       res.json({ users });
     } catch (error) {
@@ -82,7 +90,7 @@ class AdminController {
     }
   }
 
-  updateUserBalance(req, res) {
+  async updateUserBalance(req, res) {
     try {
       const { userId, amount, action = 'add', note = '' } = req.body;
       const numAmount = parseFloat(amount);
@@ -91,12 +99,13 @@ class AdminController {
         return res.status(400).json({ error: 'Valid amount is required' });
       }
 
-      const user = db.prepare('SELECT id, balance, email FROM users WHERE id = ?').get(userId);
-      if (!user) {
+      const [users] = await pool.query('SELECT id, balance, email FROM users WHERE id = ?', [userId]);
+      if (users.length === 0) {
         return res.status(404).json({ error: 'User not found' });
       }
+      const user = users[0];
 
-      let newBalance = user.balance;
+      let newBalance = parseFloat(user.balance);
       let transAmount = numAmount;
 
       if (action === 'add') {
@@ -104,22 +113,30 @@ class AdminController {
       } else if (action === 'deduct') {
         newBalance = Math.max(0, newBalance - numAmount);
       } else if (action === 'set') {
-        transAmount = Math.abs(numAmount - user.balance);
+        transAmount = Math.abs(numAmount - parseFloat(user.balance));
         newBalance = numAmount;
       }
 
       newBalance = Math.round(newBalance * 100) / 100;
 
-      db.transaction(() => {
-        db.prepare('UPDATE users SET balance = ? WHERE id = ?').run(newBalance, userId);
-        db.prepare(`
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        await connection.query('UPDATE users SET balance = ? WHERE id = ?', [newBalance, userId]);
+        await connection.query(\`
           INSERT INTO transactions (user_id, type, amount, status, gateway, details)
           VALUES (?, 'admin_adjustment', ?, 'completed', 'admin', ?)
-        `).run(userId, transAmount, `Admin adjustment (${action}): ${note || 'Manual adjustment'}`);
-      })();
+        \`, [userId, transAmount, \`Admin adjustment (\${action}): \${note || 'Manual adjustment'}\`]);
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
 
       res.json({
-        message: `Balance updated for ${user.email}`,
+        message: \`Balance updated for \${user.email}\`,
         newBalance
       });
     } catch (error) {
@@ -128,16 +145,16 @@ class AdminController {
     }
   }
 
-  getAllOrders(req, res) {
+  async getAllOrders(req, res) {
     try {
       const limit = parseInt(req.query.limit) || 100;
-      const orders = db.prepare(`
+      const [orders] = await pool.query(\`
         SELECT o.*, u.email as user_email
         FROM orders o
         JOIN users u ON o.user_id = u.id
         ORDER BY o.id DESC
         LIMIT ?
-      `).all(limit);
+      \`, [limit]);
 
       res.json({ orders });
     } catch (error) {
@@ -145,16 +162,16 @@ class AdminController {
     }
   }
 
-  getAllTransactions(req, res) {
+  async getAllTransactions(req, res) {
     try {
       const limit = parseInt(req.query.limit) || 100;
-      const transactions = db.prepare(`
+      const [transactions] = await pool.query(\`
         SELECT t.*, u.email as user_email
         FROM transactions t
         JOIN users u ON t.user_id = u.id
         ORDER BY t.id DESC
         LIMIT ?
-      `).all(limit);
+      \`, [limit]);
 
       res.json({ transactions });
     } catch (error) {
@@ -162,9 +179,9 @@ class AdminController {
     }
   }
 
-  getSettings(req, res) {
+  async getSettings(req, res) {
     try {
-      const rows = db.prepare('SELECT key, value FROM settings').all();
+      const [rows] = await pool.query('SELECT \\\`key\\\`, value FROM settings');
       const settings = {};
       rows.forEach(r => {
         settings[r.key] = r.value;
@@ -175,22 +192,27 @@ class AdminController {
     }
   }
 
-  updateSettings(req, res) {
+  async updateSettings(req, res) {
     try {
       const settings = req.body;
-      const upsert = db.prepare(`
-        INSERT INTO settings (key, value, updated_at) 
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
-      `);
-
-      const updateMany = db.transaction((entries) => {
-        for (const [key, value] of Object.entries(entries)) {
-          upsert.run(key, String(value));
+      const connection = await pool.getConnection();
+      try {
+        await connection.beginTransaction();
+        for (const [key, value] of Object.entries(settings)) {
+          await connection.query(\`
+            INSERT INTO settings (\\\`key\\\`, value, updated_at) 
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = CURRENT_TIMESTAMP
+          \`, [key, String(value)]);
         }
-      });
+        await connection.commit();
+      } catch (err) {
+        await connection.rollback();
+        throw err;
+      } finally {
+        connection.release();
+      }
 
-      updateMany(settings);
       res.json({ message: 'Settings saved successfully' });
     } catch (error) {
       console.error('updateSettings error:', error);

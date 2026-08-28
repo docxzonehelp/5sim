@@ -8,8 +8,8 @@ class CryptomusService {
     const [keyRows] = await pool.query(`SELECT value FROM settings WHERE \`key\` = 'cryptomus_api_key'`);
 
     return {
-      merchantId: merchantRows[0]?.value || process.env.CRYPTOMUS_MERCHANT_ID || '',
-      apiKey: keyRows[0]?.value || process.env.CRYPTOMUS_API_KEY || ''
+      merchantId: (merchantRows[0]?.value || process.env.CRYPTOMUS_MERCHANT_ID || '').trim(),
+      apiKey: (keyRows[0]?.value || process.env.CRYPTOMUS_API_KEY || '').trim()
     };
   }
 

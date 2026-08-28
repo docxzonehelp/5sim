@@ -8,8 +8,8 @@ class BinancePayService {
     const [secretRows] = await pool.query(`SELECT value FROM settings WHERE \`key\` = 'binance_secret_key'`);
 
     return {
-      apiKey: keyRows[0]?.value || process.env.BINANCE_PAY_API_KEY || '',
-      secretKey: secretRows[0]?.value || process.env.BINANCE_PAY_SECRET_KEY || ''
+      apiKey: (keyRows[0]?.value || process.env.BINANCE_PAY_API_KEY || '').trim(),
+      secretKey: (secretRows[0]?.value || process.env.BINANCE_PAY_SECRET_KEY || '').trim()
     };
   }
 

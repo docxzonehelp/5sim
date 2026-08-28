@@ -3,7 +3,7 @@ const pool = require('../config/database');
 
 class SimController {
   async getProfitMargin() {
-    const [rows] = await pool.query(`SELECT value FROM settings WHERE \\`key\\` = 'profit_margin'`);
+    const [rows] = await pool.query(`SELECT value FROM settings WHERE \`key\` = 'profit_margin'`);
     const margin = parseFloat(rows[0]?.value || '20');
     return isNaN(margin) ? 20 : margin;
   }

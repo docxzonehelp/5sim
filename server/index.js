@@ -11,7 +11,6 @@ if (fs.existsSync(persistentEnv)) {
 }
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const morgan = require('morgan');
 
 // Initialize database

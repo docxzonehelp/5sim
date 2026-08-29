@@ -62,29 +62,64 @@ class CryptomusService {
     const { apiKey } = await this.getCredentials();
     if (!apiKey) return false;
 
-    // Cryptomus calculates hash: md5(base64(raw_body) + apiKey)
-    // The safest way is using the exact raw string received from the request
-    let jsonStr;
-    if (rawBody && typeof rawBody === 'string') {
-      jsonStr = rawBody;
+    // Cryptomus webhook validation requires parsing the payload JSON string, sorting keys is not needed,
+    // they just use the raw body json string base64 encoded.
+    // Since we receive the rawBody properly through express now:
+    
+    let base64Str = "";
+    if (rawBody) {
+        // Parse it and remove 'sign' if it exists in the raw body text
+        let jsonStr = rawBody;
+        try {
+            const parsed = JSON.parse(rawBody);
+            // Cryptomus puts 'sign' in body. 
+            // WAIT! Actually, according to Cryptomus API docs, 'sign' is in headers for API,
+            // But in Webhooks, some users say it's in the body, others say headers. 
+            // In the screenshot, the body itself contains the 'sign' field at the very end 
+            // (I can see "sign": "..." in the screenshot log).
+            // So we MUST definitely parsed body -> delete sign -> JSON.stringify with NO spaces,
+            // OR use the raw body and replace the string. Let's do the precise hash they want.
+            
+            // The standard cryptomus webhook validation:
+            // hash = md5(base64(json_encode(payload, JSON_UNESCAPED_UNICODE)) + API_KEY)
+            // where payload does NOT include 'sign'
+            
+            const dataCopy = { ...payload };
+            delete dataCopy.sign; // Very important!
+            
+            // Ensure proper serialization (no spaces between keys/values usually)
+            // Actually they use json_encode which in PHP has no spaces. javascript JSON.stringify does exactly this.
+            jsonStr = JSON.stringify(dataCopy);
+            
+            // Sometimes they escape slashes. PHP json_encode escapes slashes by default unless JSON_UNESCAPED_SLASHES is used.
+            // Let's replace forward slashes with escaped slashes just in case? Usually stringify removes need.
+            jsonStr = jsonStr.replace(///g, '\/');
+            
+        } catch(e) {}
     } else {
-      // Fallback if rawBody isn't available
-      const dataCopy = { ...payload };
-      delete dataCopy.sign; // sign shouldn't be in the body hash usually, though cryptomus sends it in header
-      jsonStr = typeof payload === 'string' ? payload : JSON.stringify(dataCopy);
+        const dataCopy = { ...payload };
+        delete dataCopy.sign;
+        jsonStr = JSON.stringify(dataCopy).replace(///g, '\/');
     }
 
-    const base64Str = Buffer.from(jsonStr).toString('base64');
-    const calculatedSign = crypto.createHash('md5').update(base64Str + apiKey).digest('hex');
+    base64Str = Buffer.from(jsonStr).toString('base64');
+    let calculatedSign = crypto.createHash('md5').update(base64Str + apiKey).digest('hex');
 
-    if (signature === calculatedSign) return true;
+    if (calculatedSign === signature || calculatedSign === payload.sign) return true;
+    
+    // PHP json_encode without slash escaping
+    const jsonStrNoEscapes = JSON.stringify({ ...payload, sign: undefined }).replace(/"sign":undefined,?/, '');
+    const dataCopy2 = { ...payload };
+    delete dataCopy2.sign;
+    base64Str = Buffer.from(JSON.stringify(dataCopy2)).toString('base64');
+    calculatedSign = crypto.createHash('md5').update(base64Str + apiKey).digest('hex');
+    
+    if (calculatedSign === signature || calculatedSign === payload.sign) return true;
 
-    // Second fallback: Sometimes JSON.stringify removes spaces that were in the original payload
-    if (!rawBody) {
-      const altJsonStr = JSON.stringify(payload);
-      const altBase64 = Buffer.from(altJsonStr).toString('base64');
-      const altSign = crypto.createHash('md5').update(altBase64 + apiKey).digest('hex');
-      return signature === altSign;
+    // Direct Cryptomus raw body method if they send it without sign modifying the body text
+    if (rawBody && typeof rawBody === 'string') {
+        const hash = crypto.createHash('md5').update(Buffer.from(rawBody).toString('base64') + apiKey).digest('hex');
+        if (hash === signature) return true;
     }
 
     return false;

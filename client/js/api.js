@@ -107,6 +107,10 @@ const API = {
       method: 'POST',
       body: JSON.stringify({ amount })
     }),
+    createNowPayment: (amount) => API.request('/payment/nowpayment/create', {
+      method: 'POST',
+      body: JSON.stringify({ amount })
+    }),
     createBinance: (amount) => API.request('/payment/binance/create', {
       method: 'POST',
       body: JSON.stringify({ amount })

@@ -29,8 +29,8 @@ class PaymentController {
           orderId: `DEP_${transId}_${Date.now()}`,
           amount: numAmount,
           currency: 'USD',
-          urlCallback: `\${baseUrl}/api/payment/cryptomus/webhook`,
-          urlReturn: `\${baseUrl}/?payment=success`
+          urlCallback: `${baseUrl}/api/payment/cryptomus/webhook`,
+          urlReturn: `${baseUrl}/?payment=success`
         });
       } catch (err) {
         await pool.query("UPDATE transactions SET status = 'failed' WHERE id = ?", [transId]);

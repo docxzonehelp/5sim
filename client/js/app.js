@@ -1135,7 +1135,12 @@ const App = {
         } else {
           showToast('Failed to get Cryptomus invoice URL', 'error');
         }
-      } else if (gateway === 'binance') {
+      } else if (gateway === 'nowpayments') {
+      response = await API.payment.createNowPayment(amount);
+      if (response && response.payment_url) {
+        window.location.href = response.payment_url;
+      }
+    } else if (gateway === 'binance') {
         const res = await API.payment.createBinance(amount);
         if (res.checkoutUrl) {
           window.location.href = res.checkoutUrl;

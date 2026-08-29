@@ -239,6 +239,18 @@ const AdminManager = {
             </div>
           </div>
 
+          <div style="background: rgba(14, 165, 233, 0.08); border: 1px solid #0ea5e9; border-radius: var(--radius-md); padding: 1rem; display: flex; flex-direction: column; gap: 0.85rem; margin-bottom: 1rem;">
+            <h5 style="color: #7dd3fc;">⚡ NowPayments Gateway</h5>
+            <div class="form-group">
+              <label class="form-label">NowPayments API Key</label>
+              <input type="text" name="nowpayments_api_key" class="form-control" value="${s.nowpayments_api_key || ''}" placeholder="Enter API Key" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">NowPayments IPN Secret</label>
+              <input type="password" name="nowpayments_ipn_secret" class="form-control" value="${s.nowpayments_ipn_secret || ''}" placeholder="Enter IPN Secret" />
+            </div>
+          </div>
+
           <div style="background: rgba(245, 158, 11, 0.08); border: 1px solid #f59e0b; border-radius: var(--radius-md); padding: 1rem; display: flex; flex-direction: column; gap: 0.85rem;">
             <h5 style="color: #fcd34d;">🟡 Binance Pay Gateway</h5>
             <div class="form-group">

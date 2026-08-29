@@ -62,65 +62,25 @@ class CryptomusService {
     const { apiKey } = await this.getCredentials();
     if (!apiKey) return false;
 
-    // Cryptomus webhook validation requires parsing the payload JSON string, sorting keys is not needed,
-    // they just use the raw body json string base64 encoded.
-    // Since we receive the rawBody properly through express now:
-    
-    let base64Str = "";
-    if (rawBody) {
-        // Parse it and remove 'sign' if it exists in the raw body text
-        let jsonStr = rawBody;
-        try {
-            const parsed = JSON.parse(rawBody);
-            // Cryptomus puts 'sign' in body. 
-            // WAIT! Actually, according to Cryptomus API docs, 'sign' is in headers for API,
-            // But in Webhooks, some users say it's in the body, others say headers. 
-            // In the screenshot, the body itself contains the 'sign' field at the very end 
-            // (I can see "sign": "..." in the screenshot log).
-            // So we MUST definitely parsed body -> delete sign -> JSON.stringify with NO spaces,
-            // OR use the raw body and replace the string. Let's do the precise hash they want.
-            
-            // The standard cryptomus webhook validation:
-            // hash = md5(base64(json_encode(payload, JSON_UNESCAPED_UNICODE)) + API_KEY)
-            // where payload does NOT include 'sign'
-            
-            const dataCopy = { ...payload };
-            delete dataCopy.sign; // Very important!
-            
-            // Ensure proper serialization (no spaces between keys/values usually)
-            // Actually they use json_encode which in PHP has no spaces. javascript JSON.stringify does exactly this.
-            jsonStr = JSON.stringify(dataCopy);
-            
-            // Sometimes they escape slashes. PHP json_encode escapes slashes by default unless JSON_UNESCAPED_SLASHES is used.
-            // Let's replace forward slashes with escaped slashes just in case? Usually stringify removes need.
-            jsonStr = jsonStr.replace(///g, '\/');
-            
-        } catch(e) {}
-    } else {
-        const dataCopy = { ...payload };
-        delete dataCopy.sign;
-        jsonStr = JSON.stringify(dataCopy).replace(///g, '\/');
-    }
+    const dataCopy = { ...payload };
+    delete dataCopy.sign; // Very important to remove the sign field
 
-    base64Str = Buffer.from(jsonStr).toString('base64');
+    // Cryptomus calculates hash: md5(base64(json_encode(payload, JSON_UNESCAPED_UNICODE)) + API_KEY)
+    
+    // Attempt 1: Regular JSON.stringify
+    let jsonStr = JSON.stringify(dataCopy);
+    let base64Str = Buffer.from(jsonStr).toString('base64');
     let calculatedSign = crypto.createHash('md5').update(base64Str + apiKey).digest('hex');
 
     if (calculatedSign === signature || calculatedSign === payload.sign) return true;
-    
-    // PHP json_encode without slash escaping
-    const jsonStrNoEscapes = JSON.stringify({ ...payload, sign: undefined }).replace(/"sign":undefined,?/, '');
-    const dataCopy2 = { ...payload };
-    delete dataCopy2.sign;
-    base64Str = Buffer.from(JSON.stringify(dataCopy2)).toString('base64');
-    calculatedSign = crypto.createHash('md5').update(base64Str + apiKey).digest('hex');
-    
-    if (calculatedSign === signature || calculatedSign === payload.sign) return true;
 
-    // Direct Cryptomus raw body method if they send it without sign modifying the body text
-    if (rawBody && typeof rawBody === 'string') {
-        const hash = crypto.createHash('md5').update(Buffer.from(rawBody).toString('base64') + apiKey).digest('hex');
-        if (hash === signature) return true;
-    }
+    // Attempt 2: PHP json_encode escapes forward slashes by default
+    // We use String.prototype.split and join to safely replace without regex bugs
+    jsonStr = JSON.stringify(dataCopy).split('/').join('\/');
+    base64Str = Buffer.from(jsonStr).toString('base64');
+    calculatedSign = crypto.createHash('md5').update(base64Str + apiKey).digest('hex');
+
+    if (calculatedSign === signature || calculatedSign === payload.sign) return true;
 
     return false;
   }

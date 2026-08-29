@@ -801,7 +801,66 @@ const App = {
     }
   },
 
+
+  async openTransactionHistory() {
+    this.openModal('historyModal');
+    const tableBody = document.getElementById('historyList');
+    const loading = document.getElementById('historyLoading');
+    const emptyState = document.getElementById('historyEmpty');
+    
+    tableBody.innerHTML = '';
+    loading.style.display = 'block';
+    emptyState.style.display = 'none';
+
+    try {
+      const res = await API.payment.getTransactions();
+      loading.style.display = 'none';
+      
+      const deposits = res.transactions.filter(t => t.type === 'deposit');
+      
+      if (deposits.length === 0) {
+        emptyState.style.display = 'block';
+        return;
+      }
+
+      deposits.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid rgba(255,255,255,0.05)';
+        
+        const date = new Date(t.created_at).toLocaleString();
+        
+        let statusColor = '#94a3b8';
+        if (t.status === 'completed') statusColor = '#10b981'; // green
+        if (t.status === 'failed') statusColor = '#ef4444'; // red
+        if (t.status === 'pending') statusColor = '#f59e0b'; // yellow
+
+        let gatewayStr = t.gateway.charAt(0).toUpperCase() + t.gateway.slice(1);
+
+        tr.innerHTML = `
+          <td style="padding: 10px; font-size: 0.9rem;">${date}</td>
+          <td style="padding: 10px; font-weight: 600;">${parseFloat(t.amount).toFixed(2)}</td>
+          <td style="padding: 10px;">
+            <span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 12px; font-size: 0.8rem;">
+              ${gatewayStr}
+            </span>
+          </td>
+          <td style="padding: 10px;">
+            <span style="color: ${statusColor}; font-weight: 500; font-size: 0.9rem; text-transform: capitalize;">
+              ${t.status}
+            </span>
+          </td>
+        `;
+        tableBody.appendChild(tr);
+      });
+    } catch (e) {
+      loading.style.display = 'none';
+      emptyState.style.display = 'block';
+      emptyState.innerText = 'Failed to load history: ' + e.message;
+    }
+  },
+
   // Modals management
+
   openModal(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) modal.classList.add('active');

@@ -58,16 +58,36 @@ class CryptomusService {
     }
   }
 
-  async verifyWebhook(payload, signature) {
+  async verifyWebhook(payload, signature, rawBody = null) {
     const { apiKey } = await this.getCredentials();
     if (!apiKey) return false;
 
     // Cryptomus calculates hash: md5(base64(raw_body) + apiKey)
-    const jsonStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+    // The safest way is using the exact raw string received from the request
+    let jsonStr;
+    if (rawBody && typeof rawBody === 'string') {
+      jsonStr = rawBody;
+    } else {
+      // Fallback if rawBody isn't available
+      const dataCopy = { ...payload };
+      delete dataCopy.sign; // sign shouldn't be in the body hash usually, though cryptomus sends it in header
+      jsonStr = typeof payload === 'string' ? payload : JSON.stringify(dataCopy);
+    }
+
     const base64Str = Buffer.from(jsonStr).toString('base64');
     const calculatedSign = crypto.createHash('md5').update(base64Str + apiKey).digest('hex');
 
-    return signature === calculatedSign;
+    if (signature === calculatedSign) return true;
+
+    // Second fallback: Sometimes JSON.stringify removes spaces that were in the original payload
+    if (!rawBody) {
+      const altJsonStr = JSON.stringify(payload);
+      const altBase64 = Buffer.from(altJsonStr).toString('base64');
+      const altSign = crypto.createHash('md5').update(altBase64 + apiKey).digest('hex');
+      return signature === altSign;
+    }
+
+    return false;
   }
 }
 

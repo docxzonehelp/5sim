@@ -59,7 +59,7 @@ class PaymentController {
         return res.status(400).send('Invalid signature or payload');
       }
 
-      const isValid = await cryptomusService.verifyWebhook(payload, sign);
+      const isValid = await cryptomusService.verifyWebhook(payload, sign, req.rawBody);
       if (!isValid) {
         console.warn('Invalid Cryptomus webhook signature received');
         return res.status(400).send('Signature mismatch');

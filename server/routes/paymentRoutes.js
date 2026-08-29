@@ -5,7 +5,11 @@ const { authMiddleware } = require('../middleware/auth');
 
 // Cryptomus
 router.post('/cryptomus/create', authMiddleware, (req, res) => paymentController.createCryptomus(req, res));
-router.post('/cryptomus/webhook', express.json(), (req, res) => paymentController.handleCryptomusWebhook(req, res));
+router.post('/cryptomus/webhook', express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}), (req, res) => paymentController.handleCryptomusWebhook(req, res));
 
 
 // NowPayments

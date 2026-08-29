@@ -1,7 +1,7 @@
 require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
-const persistentEnv = '/home/u355017569/domains/salmon-goose-401769.hostingersite.com/.env';
+const persistentEnv = '/home/u355017569/domains/mistyrose-hummingbird-257452.hostingersite.com/.env';
 if (fs.existsSync(persistentEnv)) {
   const dotenv = require('dotenv');
   const envConfig = dotenv.parse(fs.readFileSync(persistentEnv));

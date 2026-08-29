@@ -52,7 +52,7 @@ class PaymentController {
 
   async handleCryptomusWebhook(req, res) {
     try {
-      const sign = req.headers['sign'];
+      const sign = req.body.sign || req.headers['sign'] || req.headers['Sign'];
       const payload = req.body;
 
       if (!sign || !payload) {
@@ -61,7 +61,7 @@ class PaymentController {
 
       const isValid = await cryptomusService.verifyWebhook(payload, sign, req.rawBody);
       if (!isValid) {
-        console.warn('Invalid Cryptomus webhook signature received');
+        console.warn('Invalid Cryptomus webhook signature received. Expected:', isValid, 'Got:', sign);
         return res.status(400).send('Signature mismatch');
       }
 
